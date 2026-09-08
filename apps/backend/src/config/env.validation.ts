@@ -18,6 +18,13 @@ export const envSchema = z.object({
   JWT_REFRESH_EXPIRES_IN_DAYS: z.coerce.number().int().positive().default(7),
 
   CORS_ORIGIN: z.string().min(1, 'CORS_ORIGIN is required'),
+
+  // Local dev: self-hosted via infra/livekit/docker-compose.yml (--dev
+  // mode), which always uses the well-known placeholder devkey/secret —
+  // fine for local-only, never use these in a deployed environment.
+  LIVEKIT_URL: z.string().min(1, 'LIVEKIT_URL is required'),
+  LIVEKIT_API_KEY: z.string().min(1, 'LIVEKIT_API_KEY is required'),
+  LIVEKIT_API_SECRET: z.string().min(1, 'LIVEKIT_API_SECRET is required'),
 });
 
 export type Env = z.infer<typeof envSchema>;

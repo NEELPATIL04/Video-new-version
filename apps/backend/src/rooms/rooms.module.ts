@@ -4,9 +4,10 @@ import { RoomsService } from './rooms.service';
 import { RoomHostGuard } from './guards/room-host.guard';
 import { RoomMemberGuard } from './guards/room-member.guard';
 import { AuthModule } from '../auth/auth.module';
+import { LiveKitModule } from '../livekit/livekit.module';
 
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, LiveKitModule],
   controllers: [RoomsController],
   providers: [RoomsService, RoomHostGuard, RoomMemberGuard],
 })

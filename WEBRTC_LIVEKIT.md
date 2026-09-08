@@ -1,53 +1,51 @@
 # WebRTC / LiveKit — Decisions Needed
 
-**Status:** Researched, decisions drafted — pending final sign-off per item
-**Date:** 2026-09-08
+**Status:** Core decisions implemented (self-hosted local server, token/grants, room lifecycle) — recording, waiting room, and client SDK still open
+**Date:** 2026-09-08 (updated 2026-09-09)
 **Related:** [TECH_STACK.md](./TECH_STACK.md)
 
 ---
 
 ## 1. Deployment model: LiveKit Cloud vs Self-hosted
 
-| Option | When it wins | Finding |
-|---|---|---|
-| **LiveKit Cloud** ✅ (recommended for MVP) | Faster launch, zero ops burden | Removes the operational work of running/scaling the SFU, Redis, TURN, and egress infrastructure |
-| Self-hosted | Only once at real scale | Meaningfully lower per-call cost beyond ~30K calls/month; cheaper in pure infra cost beyond ~100K calls/month — but requires someone to own version upgrades, autoscaling, on-call |
+| Option                       | When it wins                                                                            | Finding                                                                                                                                                             |
+| ---------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| LiveKit Cloud                | Faster launch, zero ops burden                                                          | Removes the operational work of running/scaling the SFU, Redis, TURN, and egress infrastructure — but needs an external account, same tradeoff we rejected for auth |
+| **Self-hosted** ✅ (decided) | Local dev now via Docker; matches the "own our infra" preference from the auth decision | No external account, no data leaves the machine                                                                                                                     |
 
-**Decision:** Start on **LiveKit Cloud** for MVP. Migrate to self-hosted once volume justifies the ops overhead. Note: Cloud plans cap concurrent agent sessions/egress minutes — becomes a real constraint at high scale, revisit before hitting limits.
+**Decision (updated 2026-09-09):** **Self-hosted**, not Cloud — consistent with choosing custom auth over Clerk. Local dev runs `livekit/livekit-server` via `infra/livekit/docker-compose.yml` in `--dev` mode (single-node, in-memory, well-known placeholder `devkey`/`secret` credentials — fine for local-only, must be replaced before any real deployment). Production self-hosting (Redis for multi-node, coturn, K8s specifics) is still the future work described in §6-8 below.
 
 ---
 
 ## 2. Authentication & token architecture
 
 - LiveKit uses **JWT access tokens**. NestJS backend holds the API key/secret (never exposed to client), generates a signed token per participant encoding **identity + room + grants**.
-- **Decision needed — grant/role scheme:**
-  - `host` — mute others, end meeting, start/stop recording
-  - `participant` — publish/subscribe own tracks only
-  - `viewer` — subscribe-only (for large/webinar-style rooms)
-- **Token revocation:** LiveKit tracks a "not-before" cutoff. When a participant is kicked or permissions change, backend must record that timestamp so old tokens are rejected — needs a field on the `Participant`/`Room` record in Postgres.
+- **Implemented** (`apps/backend/src/livekit/livekit.service.ts`) — grant/role scheme, mapped directly from our existing `RoomRole` enum (`packages/shared`, `Participant.role`):
+  - `host` → `roomAdmin: true`, `roomRecord: true`, `canPublish: true`, `canSubscribe: true`
+  - `participant` → `canPublish: true`, `canSubscribe: true`, no admin/record
+  - `viewer` → `canPublish: false`, `canSubscribe: true` (subscribe-only)
+  - Role is never read from client input — always the caller's actual `Participant.role` row, looked up server-side in `RoomsController.join()` before the token is minted.
+  - Tokens are short-lived (`ttl: "10m"`) rather than relying on a revocation/not-before mechanism — simpler, and matches the access-token pattern already used for our own auth (§5 of `TECH_STACK.md`).
 
 ---
 
 ## 3. Room & track model
 
 - **Room** = a call session. **Participants** join and each publishes **Tracks** (camera, mic, screen-share — separate tracks each).
-- **Decisions needed:**
-  - Who can publish what (tied to role/grant scheme above)
-  - Room capacity limits
-  - Room lifecycle: auto-close when empty? idle timeout?
-  - Waiting room / host-must-admit flow before someone joins?
+- **Implemented** (`apps/backend/src/rooms/`): capacity limits (`maxParticipants`, enforced in `RoomsService.joinRoom`), lifecycle (`scheduled → active` on first join, `ended` via host action, cancel-only-while-scheduled), who can publish tied to role via LiveKit grants above.
+- **Still open:** host-must-admit waiting room — this is a real product feature (host approves each joiner before they enter), not just a token/grant setting, and needs its own design pass once there's an actual call UI to admit people into.
 
-These map directly to the `Room` service in NestJS calling LiveKit's Room Service API.
+These map to the `RoomsService`/`RoomsController` in NestJS, which call LiveKit's `AccessToken` (join) — Room Service API (list/mute/kick via admin API) is still future work.
 
 ---
 
 ## 4. Video codec & simulcast
 
-| Codec | Verdict | Why |
-|---|---|---|
-| **VP8 + H.264 (baseline)** ✅ | Default | VP8 is the mandatory WebRTC baseline codec — universal compatibility. Expected to stay dominant through 2026+ |
-| VP9/AV1 | Enhancement, not default | Better compression (higher PSNR) but AV1 unlikely to dominate until ~2028; support still spotty outside recent Apple Silicon/iPhone |
-| **Simulcast** ✅ | Enable | Publisher sends multiple quality layers; SFU forwards only the layer each subscriber's bandwidth supports. This is the core reason to use an SFU — without it, one slow connection drags quality down for the whole room |
+| Codec                         | Verdict                  | Why                                                                                                                                                                                                                      |
+| ----------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **VP8 + H.264 (baseline)** ✅ | Default                  | VP8 is the mandatory WebRTC baseline codec — universal compatibility. Expected to stay dominant through 2026+                                                                                                            |
+| VP9/AV1                       | Enhancement, not default | Better compression (higher PSNR) but AV1 unlikely to dominate until ~2028; support still spotty outside recent Apple Silicon/iPhone                                                                                      |
+| **Simulcast** ✅              | Enable                   | Publisher sends multiple quality layers; SFU forwards only the layer each subscriber's bandwidth supports. This is the core reason to use an SFU — without it, one slow connection drags quality down for the whole room |
 
 **Decision:** VP8/H.264 default, simulcast on. Set target resolutions/bitrates per client tier (mobile vs desktop) in room config.
 
@@ -73,6 +71,7 @@ These map directly to the `Room` service in NestJS calling LiveKit's Room Servic
 ## 7. Networking & infra specifics (self-hosted path only — future)
 
 Non-standard vs typical Kubernetes apps — noting now so the self-host migration isn't a surprise later:
+
 - LiveKit server needs a **real UDP port range (e.g. 50000-60000) open to the internet** for media — doesn't go through a normal load balancer.
 - On Kubernetes: `hostNetwork: true` is effectively mandatory, and **one livekit-server pod per node** (DaemonSet) — two SFU instances can't share a node's port range.
 - Only signaling (port 7880) sits behind the normal ingress/load balancer; media flows directly to node IPs.
@@ -90,26 +89,26 @@ Non-standard vs typical Kubernetes apps — noting now so the self-host migratio
 ## 9. Client SDKs
 
 - Use LiveKit's **official SDKs only**:
-  - `livekit-client` (JS) for the Next.js web app
-  - `livekit-react-native` for mobile
-  - `livekit-server-sdk` (Node) in NestJS for token generation + Room Service API calls
+  - `livekit-client` (JS) for the Next.js web app — **not yet installed**, needed for the actual call UI
+  - `livekit-react-native` for mobile — deferred along with mobile generally
+  - `livekit-server-sdk` (Node) in NestJS — **installed and in use** (`LiveKitService`) for token generation
 - Do not hand-roll WebRTC (`RTCPeerConnection`) directly — SDKs handle reconnection, simulcast negotiation, and track lifecycle.
 
 ---
 
 ## Summary decision checklist
 
-| # | Decision | Current recommendation | Status |
-|---|---|---|---|
-| 1 | Cloud vs self-hosted | LiveKit Cloud for MVP | Recommended |
-| 2 | Token/grant scheme | host / participant / viewer roles | Needs sign-off |
-| 3 | Room lifecycle rules | Max size, auto-close, waiting room | Needs sign-off |
-| 4 | Codec | VP8/H.264 default, simulcast on | Recommended |
-| 5 | Recording | S3/GCS + template choice | Needs sign-off (depends on cloud provider pick) |
-| 6 | TURN | Managed on Cloud; coturn if self-hosting later | Recommended |
-| 7 | K8s networking (future) | hostNetwork + DaemonSet | Noted for later migration |
-| 8 | Redis scaling | Separate SFU room-state Redis from app Redis | Recommended |
-| 9 | SDKs | Official LiveKit SDKs only | Recommended |
+| #   | Decision                | Current recommendation                                    | Status                                          |
+| --- | ----------------------- | --------------------------------------------------------- | ----------------------------------------------- |
+| 1   | Cloud vs self-hosted    | **Self-hosted**, local Docker for dev                     | **Implemented**                                 |
+| 2   | Token/grant scheme      | host / participant / viewer roles                         | **Implemented**                                 |
+| 3   | Room lifecycle rules    | Capacity, status transitions, cancel-vs-end               | **Implemented**; waiting room still open        |
+| 4   | Codec                   | VP8/H.264 default, simulcast on                           | Recommended (client-side, not yet built)        |
+| 5   | Recording               | S3/GCS + template choice                                  | Needs sign-off (depends on cloud provider pick) |
+| 6   | TURN                    | coturn if self-hosting at scale; not needed for local dev | Deferred                                        |
+| 7   | K8s networking (future) | hostNetwork + DaemonSet                                   | Noted for later migration                       |
+| 8   | Redis scaling           | Separate SFU room-state Redis from app Redis              | Deferred to multi-node                          |
+| 9   | SDKs                    | Server SDK in use; client SDK not yet installed           | Partially implemented                           |
 
 ---
 
@@ -127,7 +126,10 @@ Non-standard vs typical Kubernetes apps — noting now so the self-host migratio
 
 ## Open items
 
-- [ ] Finalize grant/role scheme (host/participant/viewer) with product requirements
-- [ ] Decide room lifecycle rules (capacity, auto-close, waiting room)
+- [x] Finalize grant/role scheme (host/participant/viewer) — implemented in `LiveKitService`
+- [x] Decide room lifecycle rules (capacity, transitions) — implemented in `RoomsService`
+- [ ] Host-must-admit waiting room flow (needs its own design pass with a real call UI)
+- [ ] Install `livekit-client` and build the actual call UI in `apps/web`
 - [ ] Pick cloud provider (AWS vs GCP) to lock in S3 vs GCS for Egress storage
 - [ ] Design custom recording template (branding) or use default grid
+- [ ] Before any real deployment: replace the `devkey`/`secret` placeholder LiveKit credentials with real generated ones, not just for local dev

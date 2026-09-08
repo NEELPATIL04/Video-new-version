@@ -135,6 +135,7 @@ export class RoomsService {
       where: { roomId_userId: { roomId, userId } },
       update: { leftAt: null, joinedAt: new Date() },
       create: { roomId, userId, role: 'participant' },
+      include: { user: { select: { name: true } } },
     });
 
     if (room.status === RoomStatus.scheduled) {

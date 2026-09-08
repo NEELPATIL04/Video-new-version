@@ -18,11 +18,15 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RoomHostGuard } from './guards/room-host.guard';
 import { RoomMemberGuard } from './guards/room-member.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { LiveKitService } from '../livekit/livekit.service';
 
 @UseGuards(JwtAuthGuard)
 @Controller('rooms')
 export class RoomsController {
-  constructor(private readonly rooms: RoomsService) {}
+  constructor(
+    private readonly rooms: RoomsService,
+    private readonly liveKit: LiveKitService,
+  ) {}
 
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post()
@@ -65,9 +69,21 @@ export class RoomsController {
     return this.rooms.endRoom(id);
   }
 
+  // Returns both the DB participant record AND a LiveKit access token —
+  // joining a room in our data model and actually being able to connect
+  // to the live call are two different things; the client needs both to
+  // do anything useful.
   @Post(':id/join')
-  join(@Param('id') id: string, @CurrentUser() user: { userId: string }) {
-    return this.rooms.joinRoom(id, user.userId);
+  async join(@Param('id') id: string, @CurrentUser() user: { userId: string }) {
+    const participant = await this.rooms.joinRoom(id, user.userId);
+    const liveKitToken = await this.liveKit.createAccessToken({
+      identity: user.userId,
+      name: participant.user.name,
+      roomId: id,
+      role: participant.role,
+    });
+
+    return { participant, liveKitUrl: this.liveKit.getUrl(), liveKitToken };
   }
 
   @UseGuards(RoomMemberGuard)

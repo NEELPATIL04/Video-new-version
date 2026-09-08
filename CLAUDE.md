@@ -3,6 +3,7 @@
 Read this before doing any work in this repo. Full detail lives in the docs below — this file is the standing summary Claude should always follow without being reminded.
 
 ## Reference docs (source of truth — don't re-decide what's already decided here)
+
 - [TECH_STACK.md](./TECH_STACK.md) — frozen stack: Next.js/React Native frontend, NestJS backend, LiveKit (Go) for media, Postgres + Redis, Clerk/Auth0 auth
 - [WEBRTC_LIVEKIT.md](./WEBRTC_LIVEKIT.md) — LiveKit deployment, tokens/grants, codecs, recording, TURN
 - [FEATURES.md](./FEATURES.md) — scoped feature tiers v1 (MVP) → v4 (AI-driven). Build strictly in tier order.
@@ -29,10 +30,18 @@ Read this before doing any work in this repo. Full detail lives in the docs belo
 8. **Before merging any non-trivial change**, invoke the `production-readiness-guardian` subagent (`.claude/agents/production-readiness-guardian.md`) to check security, patterns, folder placement, simplicity, and production-readiness.
 
 ## Workflow shortcuts
+
 - `/code-review` before merging a feature branch (`ultra` for major releases)
 - `security-review` on any auth, payment, or LiveKit token/signaling code
 - `/simplify` after a feature works, before merge
 - `production-readiness-guardian` agent for the full standards check (see above)
 
 ## Current phase
-Planning/architecture is complete (see docs above). Codebase is **not yet scaffolded** — no `package.json`, no apps exist yet. Next real step: data model design, then monorepo scaffolding (Turborepo/Nx + pnpm, `apps/web`, `apps/mobile`, `apps/backend`, `packages/shared`).
+
+Monorepo scaffolded (`apps/web`, `apps/backend`, `packages/shared`, Turborepo + pnpm). Backend has: custom auth (argon2, rotating refresh tokens), Room/Meeting CRUD with per-resource authorization guards, and LiveKit token issuance wired into the join flow. Auth is **custom-built**, not Clerk/Auth0 (reversed from the original `TECH_STACK.md` plan — see §5 there for why). LiveKit is **self-hosted locally** via `infra/livekit/docker-compose.yml` (`--dev` mode), not Cloud.
+
+**To run locally:** Postgres running with `DATABASE_URL` in `apps/backend/.env`; `docker compose -f infra/livekit/docker-compose.yml up -d` for LiveKit; `pnpm --filter backend run start:dev`.
+
+**Not yet built:** the actual call UI (`livekit-client` isn't installed in `apps/web` yet), recording/Egress, host-admit waiting room, mobile.
+
+Git workflow in use: feature branches off `dev` (e.g. `feature/auth`, `feature/rooms`, `feature/livekit`), merged back into `dev`, pushed to `origin`. `master`/`main` is never touched or pushed.

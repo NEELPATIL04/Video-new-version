@@ -1,0 +1,14 @@
+services:
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: livekit-dev
+    restart: unless-stopped
+    # --dev: single-node, in-memory state, generates the well-known local
+    # "devkey"/"secret" API credentials. No Redis/TURN needed here — those
+    # only matter once running multiple LiveKit nodes (WEBRTC_LIVEKIT.md
+    # #7/#8), which is a production-scale concern, not a local-dev one.
+    command: --dev --bind 0.0.0.0
+    ports:
+      - "7880:7880" # signaling (HTTP/WebSocket)
+      - "7881:7881" # RTC over TCP (fallback when UDP is blocked)
+      - "50000-50100:50000-50100/udp" # RTC media (reduced range for local dev)
