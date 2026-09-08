@@ -1,0 +1,87 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoomRole {
+  host
+  participant
+  viewer
+}
+
+enum RoomStatus {
+  scheduled
+  active
+  ended
+}
+
+enum RecordingStatus {
+  processing
+  ready
+  failed
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String
+  clerkId   String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  hostedRooms  Room[]        @relation("RoomHost")
+  participants Participant[]
+
+  @@map("users")
+}
+
+model Room {
+  id              String     @id @default(uuid())
+  name            String
+  status          RoomStatus @default(scheduled)
+  scheduledFor    DateTime?
+  maxParticipants Int        @default(100)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  hostId String
+  host   User   @relation("RoomHost", fields: [hostId], references: [id])
+
+  participants Participant[]
+  recordings   Recording[]
+
+  @@map("rooms")
+}
+
+model Participant {
+  id       String    @id @default(uuid())
+  role     RoomRole
+  joinedAt DateTime  @default(now())
+  leftAt   DateTime?
+
+  roomId String
+  room   Room   @relation(fields: [roomId], references: [id])
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@unique([roomId, userId])
+  @@map("participants")
+}
+
+model Recording {
+  id          String          @id @default(uuid())
+  storageUrl  String?
+  durationSec Int?
+  status      RecordingStatus @default(processing)
+  createdAt   DateTime        @default(now())
+
+  roomId String
+  room   Room   @relation(fields: [roomId], references: [id])
+
+  @@map("recordings")
+}
