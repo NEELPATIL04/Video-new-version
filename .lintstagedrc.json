@@ -1,0 +1,8 @@
+{
+  "apps/web/**/*.{ts,tsx,js,jsx}": ["pnpm --filter web lint"],
+  "apps/backend/**/*.ts": ["pnpm --filter backend lint"],
+  "packages/shared/**/*.ts": ["pnpm --filter @video-app/shared lint"],
+  "**/*.{json,md,yml,yaml}": [
+    "./node_modules/.bin/prettier.cmd --write --ignore-unknown"
+  ]
+}
