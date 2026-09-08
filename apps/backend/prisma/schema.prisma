@@ -26,17 +26,44 @@ enum RecordingStatus {
 }
 
 model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  name      String
-  clerkId   String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String   @id @default(uuid())
+  email         String   @unique
+  name          String
+  passwordHash  String
+  emailVerified Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  hostedRooms  Room[]        @relation("RoomHost")
-  participants Participant[]
+  // Brute-force protection: incremented on failed login, reset on success.
+  // lockedUntil blocks login attempts entirely until this timestamp passes.
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+
+  hostedRooms   Room[]         @relation("RoomHost")
+  participants  Participant[]
+  refreshTokens RefreshToken[]
 
   @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  // Only the hash is stored — a DB leak alone never yields a usable token.
+  tokenHash String   @unique
+  expiresAt DateTime
+  revoked   Boolean  @default(false)
+  // Set when this token is rotated out for a new one. If a token with
+  // replacedByTokenId set is ever presented again, it's a reuse/theft
+  // signal — the service revokes the whole chain when it sees this.
+  replacedByTokenId String?
+  createdAt         DateTime @default(now())
+  userAgent         String?
+  ipAddress         String?
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@map("refresh_tokens")
 }
 
 model Room {

@@ -8,12 +8,13 @@
 
 ## 1. Frontend
 
-| Layer | Choice | Why |
-|---|---|---|
-| Web | **Next.js (React) + TypeScript** | Best WebRTC/LiveKit SDK support (React-first), huge ecosystem, SSR for fast dashboard/landing pages |
-| Mobile | **React Native** | Shares logic/state with web React code, LiveKit has a first-class RN SDK, single codebase for iOS + Android |
+| Layer  | Choice                           | Why                                                                                                         |
+| ------ | -------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Web    | **Next.js (React) + TypeScript** | Best WebRTC/LiveKit SDK support (React-first), huge ecosystem, SSR for fast dashboard/landing pages         |
+| Mobile | **React Native**                 | Shares logic/state with web React code, LiveKit has a first-class RN SDK, single codebase for iOS + Android |
 
 **Rejected alternatives:**
+
 - Vue/Nuxt, Angular — smaller ecosystem for real-time/video libraries, no advantage for this use case
 - Flutter — community-maintained WebRTC support (`flutter_webrtc`) vs LiveKit's first-class RN SDK
 - Native (Swift/Kotlin) — best performance but doubles team/timeline; only justified once RN hits real scale ceilings
@@ -22,19 +23,21 @@
 
 ## 2. Backend (polyglot — split by workload, matching real production systems)
 
-| Layer | Choice | Why |
-|---|---|---|
-| App/API + signaling | **Node.js + NestJS** | I/O-bound work (CRUD, auth, billing, WebSocket signaling) — Node's event loop handles concurrency well here; NestJS adds structure (modules, DI, `@WebSocketGateway`) so the codebase stays organized as the team grows |
-| Media server (SFU) | **LiveKit (Go, built on Pion)** | Self-hosted, open-source, production-proven — don't hand-roll RTP forwarding/congestion control; this exact problem is already solved |
-| Perf-critical microservice | **Rust** (deferred) | Add later, only once profiling proves a specific CPU-bound bottleneck — mirrors Discord's approach (Rust added surgically via NIFs, not used wholesale) |
+| Layer                      | Choice                          | Why                                                                                                                                                                                                                     |
+| -------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| App/API + signaling        | **Node.js + NestJS**            | I/O-bound work (CRUD, auth, billing, WebSocket signaling) — Node's event loop handles concurrency well here; NestJS adds structure (modules, DI, `@WebSocketGateway`) so the codebase stays organized as the team grows |
+| Media server (SFU)         | **LiveKit (Go, built on Pion)** | Self-hosted, open-source, production-proven — don't hand-roll RTP forwarding/congestion control; this exact problem is already solved                                                                                   |
+| Perf-critical microservice | **Rust** (deferred)             | Add later, only once profiling proves a specific CPU-bound bottleneck — mirrors Discord's approach (Rust added surgically via NIFs, not used wholesale)                                                                 |
 
 **Rejected / not chosen upfront:**
+
 - **Go for everything** — Discord tried Go and phased it out entirely; Go's concurrency win applies to CPU-bound/high-throughput packet work (which LiveKit already handles), not typical CRUD APIs
 - **Rust for everything** — highest raw performance but steep learning curve, slower iteration, smaller hiring pool; not justified until a measured bottleneck exists
 - **Python (Django/FastAPI)** — weaker story for high-concurrency persistent WebSocket connections (GIL, less battle-tested async)
 - **Java/Spring** — heavyweight for a lean real-time API/signaling layer
 
 **Production precedent (researched):**
+
 - Discord: Elixir (~60% backend) + Rust (CPU-heavy tasks via NIFs) + C++ (voice/video media)
 - LiveKit: Go, built on Pion
 - mediasoup: C++ workers (data plane) + Node.js (control plane)
@@ -44,20 +47,20 @@
 
 ## 3. Real-time Media
 
-| Component | Choice | Why |
-|---|---|---|
-| Core protocol | **WebRTC** | Native browser/mobile standard for real-time A/V — building a custom protocol means reimplementing NAT traversal, jitter buffers, adaptive bitrate, and DTLS-SRTP encryption from scratch |
+| Component     | Choice                                   | Why                                                                                                                                                                                            |
+| ------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Core protocol | **WebRTC**                               | Native browser/mobile standard for real-time A/V — building a custom protocol means reimplementing NAT traversal, jitter buffers, adaptive bitrate, and DTLS-SRTP encryption from scratch      |
 | Media routing | **SFU (via LiveKit)** — not P2P, not MCU | P2P mesh collapses past 3-4 participants (bandwidth explosion); MCU is CPU-expensive (server transcodes every stream); SFU forwards without re-encoding — what Zoom/Meet/Teams/Discord all use |
-| NAT traversal | **coturn** (STUN/TURN) | ~15-20% of real connections need TURN relay fallback (symmetric NAT, corporate firewalls) — skipping this breaks calls for a meaningful chunk of users |
+| NAT traversal | **coturn** (STUN/TURN)                   | ~15-20% of real connections need TURN relay fallback (symmetric NAT, corporate firewalls) — skipping this breaks calls for a meaningful chunk of users                                         |
 
 ---
 
 ## 4. Data Layer
 
-| Component | Choice | Why |
-|---|---|---|
-| Primary DB | **PostgreSQL** | Data is relational (users, orgs, rooms, billing) — real transactions, foreign keys, JSONB for flexible fields |
-| Ephemeral/real-time state | **Redis** | Presence, mute/video state, pub/sub between signaling instances — fast, no durability needed, keeps load off Postgres |
+| Component                 | Choice         | Why                                                                                                                   |
+| ------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Primary DB                | **PostgreSQL** | Data is relational (users, orgs, rooms, billing) — real transactions, foreign keys, JSONB for flexible fields         |
+| Ephemeral/real-time state | **Redis**      | Presence, mute/video state, pub/sub between signaling instances — fast, no durability needed, keeps load off Postgres |
 
 **Rejected:** MongoDB (no real schema-flexibility need here, loses joins/transactions for nothing), MySQL (no advantage over Postgres for this stack's tooling — Prisma/Drizzle favor Postgres)
 
@@ -65,9 +68,22 @@
 
 ## 5. Auth
 
-**Choice: Clerk or Auth0 (managed)**
-- Why: avoids owning password hashing, OAuth flows, MFA, session/token rotation — all security-critical with no product upside to building in-house
-- Enterprise SSO/SAML support needed once selling to companies
+**Choice: Custom auth (reversed from earlier Clerk/Auth0 decision, per explicit team preference to own this system rather than depend on a third party)**
+
+Original reasoning for a managed provider stands as a _risk_ — building auth in-house means we own the consequences of any mistake in password handling or session security. Since the decision is to build it ourselves anyway, the mitigation is rigor, not avoidance:
+
+| Concern                    | Mitigation                                                                                                                                                                                                                                                           |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Password storage           | **argon2** (winner of the Password Hashing Competition, memory-hard — resistant to GPU/ASIC cracking) — never bcrypt-only, never plaintext, never logged                                                                                                             |
+| Session tokens             | Short-lived JWT **access token** (returned in response body, kept in frontend memory only — never localStorage, to limit XSS blast radius) + long-lived **refresh token** in an **httpOnly, Secure, SameSite** cookie (unreachable by JS, mitigates XSS token theft) |
+| Refresh token theft/replay | Refresh tokens are **rotated on every use** and stored **hashed** in the DB (a DB leak alone doesn't yield usable tokens); reuse of an already-rotated token revokes the whole session (theft signal)                                                                |
+| Brute force                | `@nestjs/throttler` rate limiting on `/auth/login` and `/auth/register` specifically, plus a failed-attempt counter with temporary account lockout                                                                                                                   |
+| User enumeration           | Login always returns a generic "invalid credentials" — never reveals whether the email or the password was wrong                                                                                                                                                     |
+| Input validation           | `class-validator` DTOs, global `whitelist: true` / `forbidNonWhitelisted: true`                                                                                                                                                                                      |
+| Transport                  | Helmet security headers, explicit CORS allowlist (never `*`), cookies `Secure` in production                                                                                                                                                                         |
+| Secrets                    | JWT signing secret in `.env`, validated at startup (fail fast, never a silent missing-secret bug)                                                                                                                                                                    |
+
+**Not yet built (flagged, not silently skipped):** email verification and password-reset flows need an outbound email provider (e.g. Resend/SendGrid) — schema supports it (`emailVerified` field), but sending real email is a separate decision to make when we get there.
 
 ---
 
@@ -82,11 +98,11 @@
 
 ## 7. Infrastructure
 
-| Component | Choice | Why |
-|---|---|---|
-| Containers/orchestration | **Docker + Kubernetes (managed — EKS/GKE)** | SFU nodes need horizontal scaling based on load; K8s handles this natively without owning control-plane ops |
-| Serverless | Used only for stateless jobs (webhooks, batch AI summary generation) | Signaling/media need long-lived persistent connections — the opposite of serverless's spin-up-and-die model |
-| Cloud provider | AWS or GCP (either works) | Not a locking decision — pick based on team familiarity; GCP has a slight edge if going deep on Google's speech APIs later |
+| Component                | Choice                                                               | Why                                                                                                                        |
+| ------------------------ | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Containers/orchestration | **Docker + Kubernetes (managed — EKS/GKE)**                          | SFU nodes need horizontal scaling based on load; K8s handles this natively without owning control-plane ops                |
+| Serverless               | Used only for stateless jobs (webhooks, batch AI summary generation) | Signaling/media need long-lived persistent connections — the opposite of serverless's spin-up-and-die model                |
+| Cloud provider           | AWS or GCP (either works)                                            | Not a locking decision — pick based on team familiarity; GCP has a slight edge if going deep on Google's speech APIs later |
 
 ---
 
@@ -94,11 +110,11 @@
 
 Server-side via APIs (decided), except two exceptions noted below.
 
-| Feature | Pipeline | Why |
-|---|---|---|
-| Live transcription/captions | Audio → **Deepgram** streaming STT → captions via data channel | Purpose-built for low-latency streaming (Whisper is batch-oriented, not suited for live captions) |
-| Meeting summary/action items | Full transcript → **Claude** (post-call, batch) → summary + action items | Better quality with full context; live summarization mid-call is disruptive |
-| Noise cancellation / virtual backgrounds | **Client-side** (MediaPipe Selfie Segmentation + WASM noise suppression) | Exception to "server-side": must run on raw local feed before encoding; routing through server defeats the SFU's purpose and adds cost/latency |
+| Feature                                          | Pipeline                                                                                                                                                          | Why                                                                                                                                                                                                                                   |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Live transcription/captions                      | Audio → **Deepgram** streaming STT → captions via data channel                                                                                                    | Purpose-built for low-latency streaming (Whisper is batch-oriented, not suited for live captions)                                                                                                                                     |
+| Meeting summary/action items                     | Full transcript → **Claude** (post-call, batch) → summary + action items                                                                                          | Better quality with full context; live summarization mid-call is disruptive                                                                                                                                                           |
+| Noise cancellation / virtual backgrounds         | **Client-side** (MediaPipe Selfie Segmentation + WASM noise suppression)                                                                                          | Exception to "server-side": must run on raw local feed before encoding; routing through server defeats the SFU's purpose and adds cost/latency                                                                                        |
 | Real-time translation (standout/premium feature) | Audio → Deepgram STT → **Claude** (context-aware translation) → **ElevenLabs** (voice-cloned TTS) → published as per-listener dubbed track via **LiveKit Agents** | Differentiator vs Meet/Zoom — voice-preserved dubbing, not generic robotic translation. Realistic latency: 2-4s end-to-end (comparable to human simultaneous interpreters); show captions fast (~500ms) while dubbed audio catches up |
 
 **Cost note:** STT/TTS/LLM usage is metered per-minute — gate translation/dubbing behind a paid tier.
