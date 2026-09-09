@@ -38,10 +38,12 @@ Read this before doing any work in this repo. Full detail lives in the docs belo
 
 ## Current phase
 
-Monorepo scaffolded (`apps/web`, `apps/backend`, `packages/shared`, Turborepo + pnpm). Backend has: custom auth (argon2, rotating refresh tokens), Room/Meeting CRUD with per-resource authorization guards, and LiveKit token issuance wired into the join flow. Auth is **custom-built**, not Clerk/Auth0 (reversed from the original `TECH_STACK.md` plan — see §5 there for why). LiveKit is **self-hosted locally** via `infra/livekit/docker-compose.yml` (`--dev` mode), not Cloud.
+Monorepo scaffolded (`apps/web`, `apps/backend`, `packages/shared`, Turborepo + pnpm). Backend has: custom auth (argon2, rotating refresh tokens), Room/Meeting CRUD with per-resource authorization guards, LiveKit token issuance wired into the join flow, and host-only admin actions (mute participant audio, remove participant) backed by `RoomServiceClient`. Auth is **custom-built**, not Clerk/Auth0 (reversed from the original `TECH_STACK.md` plan — see §5 there for why). LiveKit is **self-hosted locally** via `infra/livekit/docker-compose.yml` (`--dev` mode), not Cloud.
 
-**To run locally:** Postgres running with `DATABASE_URL` in `apps/backend/.env`; `docker compose -f infra/livekit/docker-compose.yml up -d` for LiveKit; `pnpm --filter backend run start:dev`.
+Frontend has a working call UI (`CallRoom` wrapping `@livekit/components-react`'s `VideoConference` prefab) and a `HostControls` panel (host-only, live participant list via `useParticipants`) for muting/removing participants mid-call. Covered end-to-end by Playwright (`apps/web/e2e/two-user-call.spec.ts`): two isolated browser contexts joining the same room, host mute verified against LiveKit's own server-side state (not DOM), and host remove verified by the removed participant's page actually navigating away.
 
-**Not yet built:** the actual call UI (`livekit-client` isn't installed in `apps/web` yet), recording/Egress, host-admit waiting room, mobile.
+**To run locally:** Postgres running with `DATABASE_URL` in `apps/backend/.env`; `docker compose -f infra/livekit/docker-compose.yml up -d` for LiveKit; `pnpm --filter backend run start:dev`; `pnpm --filter web run dev`. E2E: `pnpm --filter web exec playwright test` (needs backend + LiveKit + Postgres running).
+
+**Not yet built:** recording/Egress, host-admit waiting room, screen-share-specific controls beyond the SDK default, mobile.
 
 Git workflow in use: feature branches off `dev` (e.g. `feature/auth`, `feature/rooms`, `feature/livekit`), merged back into `dev`, pushed to `origin`. `master`/`main` is never touched or pushed.
