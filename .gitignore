@@ -27,6 +27,10 @@ Thumbs.db
 
 # Testing
 coverage/
+test-results/
+playwright-report/
+playwright/.cache/
+blob-report/
 
 # Claude Code local overrides (personal, not team-shared)
 .claude/settings.local.json
