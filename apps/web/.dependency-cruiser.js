@@ -30,7 +30,10 @@ module.exports = {
         "remove it. If it's logical this module is an orphan (i.e. it's a config file), " +
         "add an exception for it in your dependency-cruiser configuration. By default " +
         "this rule does not scrutinize dot-files (e.g. .eslintrc.js), TypeScript declaration " +
-        "files (.d.ts), tsconfig.json and some of the babel and webpack configs.",
+        "files (.d.ts), tsconfig.json and some of the babel and webpack configs. " +
+        'NOTE: src/lib/api-client.ts flags here as a false positive — same "@/*" alias-resolution ' +
+        'gap as the not-to-unresolvable rule above; it IS imported (features/auth/api.ts, ' +
+        'features/rooms/api.ts, etc.), depcruise just can\'t see the edge.',
       severity: 'warn',
       from: {
         orphan: true,
@@ -113,9 +116,12 @@ module.exports = {
         "This module depends on a module that cannot be found ('resolved to disk'). If it's an npm " +
         'module: add it to your package.json. In all other cases you likely already know what to do. ' +
         'NOTE: downgraded from error to warn — enhanced-resolve currently misresolves some subpath ' +
-        "exports (e.g. next/image, next/font/google) even though they work fine at build/runtime. " +
-        'Same known limitation as apps/backend\'s config. Revisit if a real unresolvable import needs ' +
-        'catching; for now this would only produce false positives on every run.',
+        "exports (e.g. next/image, next/font/google) even though they work fine at build/runtime, " +
+        "and doesn't follow the tsconfig \"@/*\" path alias (tsConfig option below only feeds the " +
+        'TS-aware parser, not enhanced-resolve\'s own alias handling) — every "@/..." and many ' +
+        'relative imports get flagged even though tsc/next build both resolve them fine. Same known ' +
+        "limitation as apps/backend's config. Revisit if a real unresolvable import needs catching; " +
+        'for now this would only produce false positives on every run.',
       severity: 'warn',
       from: {},
       to: {
