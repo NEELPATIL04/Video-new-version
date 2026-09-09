@@ -16,8 +16,23 @@ export default defineConfig({
     // resolve immediately with a synthetic stream in CI/headless runs,
     // so the LiveKitRoom publish path is exercised for real rather than
     // being skipped.
+    //
+    // --force-webrtc-ip-handling-policy: Chrome hides local ICE
+    // candidates behind mDNS ".local" hostnames by default. mDNS
+    // resolution routinely fails in headless/automated browser instances
+    // (no responder reachable in that process context) — with no TURN
+    // server configured (WEBRTC_LIVEKIT.md #6, not needed for local dev),
+    // that leaves ICE with zero usable candidates and the peer connection
+    // never establishes. Forcing direct IPs fixes it. This is why a real
+    // desktop Chrome window (the manual two-window test) worked fine but
+    // this automated run didn't — it's an automation-mode quirk, not an
+    // app bug.
     launchOptions: {
-      args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"],
+      args: [
+        "--use-fake-device-for-media-stream",
+        "--use-fake-ui-for-media-stream",
+        "--force-webrtc-ip-handling-policy=default_public_and_private_interfaces",
+      ],
     },
   },
   projects: [
