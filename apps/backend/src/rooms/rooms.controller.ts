@@ -98,4 +98,30 @@ export class RoomsController {
   listParticipants(@Param('id') id: string) {
     return this.rooms.listActiveParticipants(id);
   }
+
+  // Host-only admin actions. RoomHostGuard re-verifies ownership at the DB
+  // level per request (never trusts a client-side "I'm the host" claim);
+  // RoomsService additionally blocks targeting an inactive/non-existent
+  // participant or the host themselves.
+  @UseGuards(RoomHostGuard)
+  @Post(':id/participants/:userId/mute')
+  @HttpCode(HttpStatus.OK)
+  muteParticipant(
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+    @CurrentUser() user: { userId: string },
+  ) {
+    return this.rooms.muteParticipant(id, user.userId, userId);
+  }
+
+  @UseGuards(RoomHostGuard)
+  @Post(':id/participants/:userId/remove')
+  @HttpCode(HttpStatus.OK)
+  removeParticipant(
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+    @CurrentUser() user: { userId: string },
+  ) {
+    return this.rooms.removeParticipant(id, user.userId, userId);
+  }
 }

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -6,12 +7,16 @@ import {
 } from '@nestjs/common';
 import { RoomStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { LiveKitService } from '../livekit/livekit.service';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
 
 @Injectable()
 export class RoomsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly liveKit: LiveKitService,
+  ) {}
 
   async createRoom(hostId: string, dto: CreateRoomDto) {
     // Room + the host's own Participant row must be created together — a
@@ -187,5 +192,66 @@ export class RoomsService {
       where: { roomId_userId: { roomId, userId } },
     });
     return !!participant && participant.leftAt === null;
+  }
+
+  // Shared validation for both host actions below. Not merely "is this a
+  // real user" — verifies the target is an ACTIVE participant of THIS
+  // specific room (DB-level check, same BOLA-mitigation pattern as
+  // RoomHostGuard/RoomMemberGuard), and blocks a host from running an
+  // admin action on themselves — muting/removing yourself via an admin
+  // endpoint is nonsensical when you already have direct control over
+  // your own mic and connection.
+  private async assertActiveNonSelfParticipant(
+    roomId: string,
+    hostId: string,
+    targetUserId: string,
+  ) {
+    if (targetUserId === hostId) {
+      throw new BadRequestException(
+        'You cannot target yourself with a host action',
+      );
+    }
+
+    const participant = await this.prisma.participant.findUnique({
+      where: { roomId_userId: { roomId, userId: targetUserId } },
+    });
+
+    if (!participant || participant.leftAt) {
+      throw new NotFoundException(
+        'This user is not an active participant in this room',
+      );
+    }
+
+    return participant;
+  }
+
+  async muteParticipant(
+    roomId: string,
+    hostId: string,
+    targetUserId: string,
+  ): Promise<void> {
+    await this.assertActiveNonSelfParticipant(roomId, hostId, targetUserId);
+    await this.liveKit.muteParticipantAudio(roomId, targetUserId);
+  }
+
+  async removeParticipant(
+    roomId: string,
+    hostId: string,
+    targetUserId: string,
+  ): Promise<void> {
+    const participant = await this.assertActiveNonSelfParticipant(
+      roomId,
+      hostId,
+      targetUserId,
+    );
+    await this.liveKit.removeParticipant(roomId, targetUserId);
+    // Reconcile our own record with what just happened in LiveKit — the
+    // capacity/lifecycle logic in joinRoom reads leftAt, so a removed
+    // participant must be reflected here too, not just kicked from the
+    // live call.
+    await this.prisma.participant.update({
+      where: { id: participant.id },
+      data: { leftAt: new Date() },
+    });
   }
 }

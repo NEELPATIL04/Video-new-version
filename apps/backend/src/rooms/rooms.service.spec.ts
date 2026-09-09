@@ -1,11 +1,13 @@
 import { Test } from '@nestjs/testing';
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 import { RoomsService } from './rooms.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { LiveKitService } from '../livekit/livekit.service';
 
 describe('RoomsService', () => {
   let service: RoomsService;
@@ -28,6 +30,10 @@ describe('RoomsService', () => {
       findMany: jest.Mock;
     };
     $transaction: jest.Mock;
+  };
+  let liveKit: {
+    muteParticipantAudio: jest.Mock;
+    removeParticipant: jest.Mock;
   };
 
   const makeRoom = (overrides: Record<string, unknown> = {}) => ({
@@ -70,8 +76,17 @@ describe('RoomsService', () => {
       }),
     };
 
+    liveKit = {
+      muteParticipantAudio: jest.fn(),
+      removeParticipant: jest.fn(),
+    };
+
     const moduleRef = await Test.createTestingModule({
-      providers: [RoomsService, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        RoomsService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: LiveKitService, useValue: liveKit },
+      ],
     }).compile();
 
     service = moduleRef.get(RoomsService);
@@ -295,6 +310,88 @@ describe('RoomsService', () => {
       prisma.room.findUnique.mockResolvedValue({ hostId: 'host-1' });
       prisma.participant.findUnique.mockResolvedValue(null);
       expect(await service.isMember('room-1', 'stranger')).toBe(false);
+    });
+  });
+
+  describe('muteParticipant', () => {
+    it('refuses a host muting themselves — never calls LiveKit', async () => {
+      await expect(
+        service.muteParticipant('room-1', 'host-1', 'host-1'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(liveKit.muteParticipantAudio).not.toHaveBeenCalled();
+    });
+
+    it('refuses to mute someone who is not an active participant of this room', async () => {
+      prisma.participant.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.muteParticipant('room-1', 'host-1', 'stranger'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(liveKit.muteParticipantAudio).not.toHaveBeenCalled();
+    });
+
+    it('refuses to mute a participant who already left', async () => {
+      prisma.participant.findUnique.mockResolvedValue({
+        id: 'p-2',
+        leftAt: new Date(),
+      });
+
+      await expect(
+        service.muteParticipant('room-1', 'host-1', 'user-2'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(liveKit.muteParticipantAudio).not.toHaveBeenCalled();
+    });
+
+    it('mutes an active participant via LiveKit and touches no DB state', async () => {
+      prisma.participant.findUnique.mockResolvedValue({
+        id: 'p-2',
+        leftAt: null,
+      });
+
+      await service.muteParticipant('room-1', 'host-1', 'user-2');
+
+      expect(liveKit.muteParticipantAudio).toHaveBeenCalledWith(
+        'room-1',
+        'user-2',
+      );
+      expect(prisma.participant.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('removeParticipant', () => {
+    it('refuses a host removing themselves', async () => {
+      await expect(
+        service.removeParticipant('room-1', 'host-1', 'host-1'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(liveKit.removeParticipant).not.toHaveBeenCalled();
+    });
+
+    it('refuses to remove someone who is not an active participant', async () => {
+      prisma.participant.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.removeParticipant('room-1', 'host-1', 'stranger'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(liveKit.removeParticipant).not.toHaveBeenCalled();
+    });
+
+    it('removes via LiveKit AND reconciles our own Participant record (leftAt)', async () => {
+      prisma.participant.findUnique.mockResolvedValue({
+        id: 'p-2',
+        leftAt: null,
+      });
+      prisma.participant.update.mockResolvedValue({});
+
+      await service.removeParticipant('room-1', 'host-1', 'user-2');
+
+      expect(liveKit.removeParticipant).toHaveBeenCalledWith(
+        'room-1',
+        'user-2',
+      );
+      expect(prisma.participant.update).toHaveBeenCalledWith({
+        where: { id: 'p-2' },
+        data: { leftAt: expect.any(Date) },
+      });
     });
   });
 });
