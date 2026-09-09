@@ -44,3 +44,21 @@ export function joinRoom(id: string, accessToken: string) {
 export function leaveRoom(id: string, accessToken: string) {
   return apiFetch<void>(`/rooms/${id}/leave`, { method: "POST", accessToken });
 }
+
+// Host-only — the backend re-verifies the caller is actually the host at
+// the DB level (RoomHostGuard) regardless of what the UI shows, so these
+// calls are safe to expose to any signed-in user; a non-host attempting
+// them just gets a 403.
+export function muteParticipant(roomId: string, targetUserId: string, accessToken: string) {
+  return apiFetch<void>(`/rooms/${roomId}/participants/${targetUserId}/mute`, {
+    method: "POST",
+    accessToken,
+  });
+}
+
+export function removeParticipant(roomId: string, targetUserId: string, accessToken: string) {
+  return apiFetch<void>(`/rooms/${roomId}/participants/${targetUserId}/remove`, {
+    method: "POST",
+    accessToken,
+  });
+}

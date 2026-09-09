@@ -2,10 +2,13 @@
 
 import { useRouter } from "next/navigation";
 import { LiveKitRoom, VideoConference } from "@livekit/components-react";
+import { HostControls } from "./HostControls";
 
 interface CallRoomProps {
+  roomId: string;
   liveKitUrl: string;
   liveKitToken: string;
+  isHost: boolean;
 }
 
 // Thin wrapper around LiveKit's own pre-built VideoConference prefab — grid
@@ -22,7 +25,7 @@ interface CallRoomProps {
 // signaling regardless of device permissions; VideoConference's own
 // control bar lets the participant turn camera/mic on afterward once
 // they've granted access.
-export function CallRoom({ liveKitUrl, liveKitToken }: CallRoomProps) {
+export function CallRoom({ roomId, liveKitUrl, liveKitToken, isHost }: CallRoomProps) {
   const router = useRouter();
 
   return (
@@ -31,10 +34,15 @@ export function CallRoom({ liveKitUrl, liveKitToken }: CallRoomProps) {
       token={liveKitToken}
       connect
       data-lk-theme="default"
-      style={{ height: "100vh" }}
+      style={{ height: "100vh", position: "relative" }}
       onDisconnected={() => router.push("/rooms")}
     >
       <VideoConference />
+      {/* Inside LiveKitRoom's context so it can read the live participant
+          list — HostControls itself gates rendering when no one else has
+          joined yet, but the isHost check happens here so a non-host
+          never even mounts a component with mute/remove actions. */}
+      {isHost && <HostControls roomId={roomId} />}
     </LiveKitRoom>
   );
 }

@@ -61,5 +61,12 @@ export default function RoomCallPage() {
     );
   }
 
-  return <CallRoom liveKitUrl={joinResult!.liveKitUrl} liveKitToken={joinResult!.liveKitToken} />;
+  return (
+    <CallRoom
+      roomId={id}
+      liveKitUrl={joinResult!.liveKitUrl}
+      liveKitToken={joinResult!.liveKitToken}
+      isHost={joinResult!.participant.role === "host"}
+    />
+  );
 }
