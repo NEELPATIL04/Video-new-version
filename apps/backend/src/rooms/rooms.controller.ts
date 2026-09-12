@@ -35,6 +35,21 @@ export class RoomsController {
     return this.rooms.listMyRooms(user.userId);
   }
 
+  // MUST stay registered before @Get(':id') below — Nest/Express match
+  // routes in declaration order, so if ':id' came first, a request to
+  // /rooms/by-code/482913657 would match it with id="by-code" and never
+  // reach this handler at all.
+  //
+  // Stricter than the global default (60/min) — a 9-digit code is a
+  // ~30-bit keyspace (vs. the 122-bit UUID room IDs), enumerable enough
+  // that this is a brute-force target the same way the auth endpoints
+  // are, not just a convenience lookup.
+  @Throttle({ default: { limit: 15, ttl: 60_000 } })
+  @Get('by-code/:code')
+  getByCode(@Param('code') code: string) {
+    return this.rooms.findRoomByCode(code);
+  }
+
   // Room IDs are unguessable UUIDs (122 bits of randomness) — knowing the
   // ID is treated as equivalent to "having the meeting link", the same
   // model Zoom/Meet use for join links. Any authenticated user may fetch

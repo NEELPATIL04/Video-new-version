@@ -75,6 +75,13 @@ model Room {
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 
+  // A short, human-typeable alternative to sharing the full room ID/URL
+  // (Zoom/Meet-style numeric code). Generated once at creation; never
+  // reused even after a room ends, since an old code silently starting to
+  // resolve to a different, unrelated room later would be a genuine
+  // security surprise for anyone who kept a stale code around.
+  joinCode String @unique
+
   hostId String
   host   User   @relation("RoomHost", fields: [hostId], references: [id])
 

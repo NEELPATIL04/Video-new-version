@@ -143,6 +143,70 @@ describe('RoomsService', () => {
         data: expect.objectContaining({ scheduledFor: new Date(future) }),
       });
     });
+
+    it('generates a 9-digit joinCode and includes it in the created room', async () => {
+      prisma.room.findUnique.mockResolvedValue(null); // no collision
+      const room = makeRoom();
+      prisma.room.create.mockResolvedValue(room);
+      prisma.participant.create.mockResolvedValue({ id: 'p-1', role: 'host' });
+
+      await service.createRoom('host-1', { name: 'Standup' });
+
+      expect(prisma.room.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          joinCode: expect.stringMatching(/^\d{9}$/),
+        }),
+      });
+    });
+
+    it('retries join code generation on a collision', async () => {
+      // First candidate collides (findUnique returns an existing room),
+      // second candidate is free.
+      prisma.room.findUnique
+        .mockResolvedValueOnce({ id: 'some-other-room' })
+        .mockResolvedValueOnce(null);
+      const room = makeRoom();
+      prisma.room.create.mockResolvedValue(room);
+      prisma.participant.create.mockResolvedValue({ id: 'p-1', role: 'host' });
+
+      await service.createRoom('host-1', { name: 'Standup' });
+
+      expect(prisma.room.findUnique).toHaveBeenCalledTimes(2);
+      expect(prisma.room.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          joinCode: expect.stringMatching(/^\d{9}$/),
+        }),
+      });
+    });
+  });
+
+  describe('findRoomByCode', () => {
+    it('strips non-digit characters before looking up the code', async () => {
+      prisma.room.findUnique.mockResolvedValue(makeRoom());
+
+      await service.findRoomByCode('482 913 657');
+
+      expect(prisma.room.findUnique).toHaveBeenCalledWith({
+        where: { joinCode: '482913657' },
+      });
+    });
+
+    it('throws NotFoundException when no room matches the code', async () => {
+      prisma.room.findUnique.mockResolvedValue(null);
+
+      await expect(service.findRoomByCode('000000000')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+
+    it('returns the matching room', async () => {
+      const room = makeRoom();
+      prisma.room.findUnique.mockResolvedValue(room);
+
+      const result = await service.findRoomByCode('482913657');
+
+      expect(result).toBe(room);
+    });
   });
 
   describe('getRoomById', () => {

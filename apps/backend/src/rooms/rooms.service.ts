@@ -41,6 +41,8 @@ export class RoomsService {
       throw new BadRequestException('scheduledFor must be in the future');
     }
 
+    const joinCode = await this.generateUniqueJoinCode();
+
     // Room + the host's own Participant row must be created together — a
     // room that exists with no host membership row would break
     // listParticipants and the membership guard for its own creator.
@@ -51,6 +53,7 @@ export class RoomsService {
           scheduledFor: dto.scheduledFor ? new Date(dto.scheduledFor) : null,
           maxParticipants: dto.maxParticipants,
           hostId,
+          joinCode,
         },
       });
 
@@ -69,6 +72,27 @@ export class RoomsService {
     });
   }
 
+  // A short, human-typeable alternative to the room ID/link — 9 random
+  // digits, e.g. "482 913 657" once formatted for display. This isn't a
+  // security boundary (the waiting room + auth are); it just needs to be
+  // unique and hard to type wrong, not cryptographically unguessable, so
+  // a bounded existence-check retry is the right amount of rigor — the
+  // same trade real products like Zoom make with their own meeting IDs.
+  private async generateUniqueJoinCode(): Promise<string> {
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const code = String(Math.floor(Math.random() * 1_000_000_000)).padStart(
+        9,
+        '0',
+      );
+      const existing = await this.prisma.room.findUnique({
+        where: { joinCode: code },
+        select: { id: true },
+      });
+      if (!existing) return code;
+    }
+    throw new Error('Could not generate a unique join code');
+  }
+
   // Rooms the user hosts, or is currently an active participant in.
   listMyRooms(userId: string) {
     return this.prisma.room.findMany({
@@ -85,6 +109,18 @@ export class RoomsService {
   async getRoomById(roomId: string) {
     const room = await this.prisma.room.findUnique({ where: { id: roomId } });
     if (!room) throw new NotFoundException('Room not found');
+    return room;
+  }
+
+  // Any authenticated user may resolve a code to a room — same model as
+  // getRoomById above (knowing the code is treated as equivalent to
+  // having the join link; the waiting room gates actual admission).
+  // Strips non-digits first so "482 913 657" (the display format) works
+  // the same as the raw "482913657".
+  async findRoomByCode(rawCode: string) {
+    const joinCode = rawCode.replace(/\D/g, '');
+    const room = await this.prisma.room.findUnique({ where: { joinCode } });
+    if (!room) throw new NotFoundException('No meeting found with that code');
     return room;
   }
 
