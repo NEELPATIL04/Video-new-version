@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { LiveKitRoom, VideoConference } from "@livekit/components-react";
 import { HostControls } from "./HostControls";
+import { ReactionsControl } from "./ReactionsControl";
 import { WaitingRoomHostPanel } from "./WaitingRoomHostPanel";
 
 // @livekit/track-processors pulls in MediaPipe's WASM segmentation model
@@ -71,9 +72,15 @@ export function CallRoom({ roomId, liveKitUrl, liveKitToken, isHost }: CallRoomP
         </>
       )}
       {/* Every participant controls their own camera background and mic
-          noise cancellation, not just the host. */}
+          noise cancellation, not just the host — and anyone can react,
+          not just the host. ReactionsControl isn't dynamic-imported like
+          the other two: useDataChannel is LiveKit's own hook, already
+          proven safe to import directly (HostControls does the same
+          with useParticipants), unlike the third-party WASM libraries
+          the other controls load. */}
       <BackgroundEffectsControl />
       <NoiseCancellationControl />
+      <ReactionsControl />
     </LiveKitRoom>
   );
 }
