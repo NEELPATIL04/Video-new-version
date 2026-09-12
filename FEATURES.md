@@ -46,7 +46,7 @@ shipped and stable, per the tier-order rule.
 | Noise cancellation — **done**, via RNNoise (not LiveKit's Krisp package — that's LiveKit Cloud-only, see Research notes) | v2  |
 | Breakout rooms                                                                                                           | v2  |
 | Reactions/emojis — **done**, via LiveKit's own data channel (`useDataChannel`) — see Research notes                      | v2  |
-| Raise hand                                                                                                               | v2  |
+| Raise hand — **done**, via LiveKit participant metadata (not the data channel) — see Research notes                      | v2  |
 | Polls & Q&A                                                                                                              | v2  |
 | Collaborative whiteboard/annotation (in-app: blank canvas + draw-on-shared-screen, inside our own video call UI)         | v2  |
 | In-chat file sharing                                                                                                     | v2  |
@@ -265,6 +265,55 @@ filter). Sent lossy (not reliable) since a dropped reaction just never appears, 
 fine for something this ephemeral. Shown as a simple fading toast rather than attached to a
 sender's video tile — the latter would mean forking `VideoConference`'s grid layout, a much
 bigger change for a cosmetic touch.
+
+### Raise hand — metadata vs. data channel (why this one couldn't reuse reactions' transport)
+
+Reactions (shipped just before this) used LiveKit's data channel
+(`useDataChannel`) as a fire-and-forget broadcast, and the standing rule from
+that feature's research (compare real alternatives, not just reach for the
+platform default) still applies here — but the comparison that actually
+mattered for raise-hand wasn't "data channel vs. some other broker", it was
+"data channel vs. LiveKit's OWN other sync mechanism, participant metadata",
+because the two solve genuinely different problems:
+
+| Property                                   | Data channel (reactions' choice)       | Participant metadata (raise-hand's choice)                                                                            |
+| ------------------------------------------ | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| What it represents                         | A one-off event ("an emoji was sent")  | Current state ("whose hand is up right now")                                                                          |
+| Delivered to a participant who joins LATER | No — fire-and-forget, already missed   | Yes — LiveKit resyncs every participant's current metadata to a newly-joined participant as part of normal room state |
+| Correct behavior needed here               | N/A — reactions are meant to disappear | A late joiner MUST see an already-raised hand, or the feature is silently broken for them                             |
+
+A pure data-channel implementation would have looked identical to the
+metadata version in every manual two-person test, and would only fail the
+one scenario that actually matters: a third participant joining after a hand
+was already raised. That's specifically why `raise-hand.spec.ts` includes
+"a participant who joins AFTER a hand is already raised also sees it" as its
+own test, not just "does it broadcast" — it's the test that would have
+caught the wrong transport choice.
+
+**Security surface, checked before committing to metadata (per the standing
+research-alternatives rule):** `localParticipant.setMetadata()` needs a new
+LiveKit access-token grant, `canUpdateOwnMetadata` (off by default — checked
+directly in `livekit-server-sdk`'s `VideoGrant` type rather than assumed).
+Its name is the security argument: LiveKit enforces server-side that this
+grant only ever lets a participant update THEIR OWN metadata — there's no
+way to reach this API and forge another participant's state, so granting it
+to every participant (host + participant, same viewer carve-out as
+`canPublish`) adds no meaningful new attack surface. The one thing this
+grant genuinely can't do is let a HOST lower ANOTHER participant's hand
+(that's not "own" metadata from the host's perspective) — that path goes
+through a real backend endpoint instead
+(`POST /rooms/:id/participants/:userId/lower-hand`), using
+`RoomServiceClient.updateParticipant()` server-side, guarded by the same
+`assertActiveNonSelfParticipant` DB-level check as mute/remove.
+
+**Why this isn't a DB field.** `Participant.admittedAt` is DB-tracked
+because it's meaningful after the fact (audit trail, "when did this person
+get let in") and needs to survive a reconnect. A raised hand is neither —
+nobody needs to know an hour later that a hand was raised, and if
+LiveKit itself restarted the room state would legitimately reset too. It's
+live call state, matching how nothing else about the in-call UI (camera
+background choice, noise cancellation on/off) is persisted to Postgres
+either.
 
 ## Open items
 
