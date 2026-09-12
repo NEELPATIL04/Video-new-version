@@ -10,124 +10,197 @@
 
 ## Tier 1 — v1 / MVP (core, must-have — "a working video call app")
 
-| Feature | Tag |
-|---|---|
-| User accounts: sign up/login | v1 |
-| Google/Microsoft SSO | v1 |
-| Create meeting: instant | v1 |
-| Create meeting: scheduled | v1 |
-| Create meeting: recurring | v1 |
-| Join via link or meeting code | v1 |
-| 1:1 video/audio calling | v1 |
-| Group video/audio calling | v1 |
-| Mute/unmute audio | v1 |
-| Camera on/off | v1 |
-| Screen sharing | v1 |
-| In-call text chat | v1 |
-| Participant list | v1 |
-| Host controls: mute participant | v1 |
-| Host controls: remove participant | v1 |
-| Waiting room / lobby (host admits) | v1 |
-| Cloud recording (start/stop, playback) | v1 |
-| Calendar integration (Google Calendar, Outlook) | v1 |
-| Email/push notifications & reminders | v1 |
-| Web app | v1 |
-| Mobile app (iOS/Android) | v1 |
+| Feature                                         | Tag |
+| ----------------------------------------------- | --- |
+| User accounts: sign up/login                    | v1  |
+| Google/Microsoft SSO                            | v1  |
+| Create meeting: instant                         | v1  |
+| Create meeting: scheduled                       | v1  |
+| Create meeting: recurring                       | v1  |
+| Join via link or meeting code                   | v1  |
+| 1:1 video/audio calling                         | v1  |
+| Group video/audio calling                       | v1  |
+| Mute/unmute audio                               | v1  |
+| Camera on/off                                   | v1  |
+| Screen sharing                                  | v1  |
+| In-call text chat                               | v1  |
+| Participant list                                | v1  |
+| Host controls: mute participant                 | v1  |
+| Host controls: remove participant               | v1  |
+| Waiting room / lobby (host admits)              | v1  |
+| Cloud recording (start/stop, playback)          | v1  |
+| Calendar integration (Google Calendar, Outlook) | v1  |
+| Email/push notifications & reminders            | v1  |
+| Web app                                         | v1  |
+| Mobile app (iOS/Android)                        | v1  |
 
 ---
 
 ## Tier 2 — v2 (standard — competitive parity with Meet/Zoom)
 
-| Feature | Tag |
-|---|---|
-| Virtual backgrounds | v2 |
-| Background blur | v2 |
-| Noise cancellation | v2 |
-| Breakout rooms | v2 |
-| Reactions/emojis | v2 |
-| Raise hand | v2 |
-| Polls & Q&A | v2 |
-| Collaborative whiteboard/annotation | v2 |
-| In-chat file sharing | v2 |
-| Meeting lock (block new joiners mid-call) | v2 |
-| Co-host / multiple hosts | v2 |
-| Layout: grid view | v2 |
-| Layout: speaker view | v2 |
-| Layout: gallery view | v2 |
-| Picture-in-picture mode | v2 |
-| Device picker (mic/camera/speaker) | v2 |
-| Network quality indicator | v2 |
-| Meeting analytics (attendance, duration, join/leave times) | v2 |
-| Recording sharing (permissioned link) | v2 |
-| End-to-end encryption toggle | v2 |
+| Feature                                                                                                          | Tag |
+| ---------------------------------------------------------------------------------------------------------------- | --- |
+| Virtual backgrounds                                                                                              | v2  |
+| Background blur                                                                                                  | v2  |
+| Noise cancellation                                                                                               | v2  |
+| Breakout rooms                                                                                                   | v2  |
+| Reactions/emojis                                                                                                 | v2  |
+| Raise hand                                                                                                       | v2  |
+| Polls & Q&A                                                                                                      | v2  |
+| Collaborative whiteboard/annotation (in-app: blank canvas + draw-on-shared-screen, inside our own video call UI) | v2  |
+| In-chat file sharing                                                                                             | v2  |
+| Meeting lock (block new joiners mid-call)                                                                        | v2  |
+| Co-host / multiple hosts                                                                                         | v2  |
+| Layout: grid view                                                                                                | v2  |
+| Layout: speaker view                                                                                             | v2  |
+| Layout: gallery view                                                                                             | v2  |
+| Picture-in-picture mode                                                                                          | v2  |
+| Device picker (mic/camera/speaker)                                                                               | v2  |
+| Network quality indicator                                                                                        | v2  |
+| Meeting analytics (attendance, duration, join/leave times)                                                       | v2  |
+| Recording sharing (permissioned link)                                                                            | v2  |
+| End-to-end encryption toggle                                                                                     | v2  |
 
 ---
 
 ## Tier 3 — v3 (advanced / enterprise)
 
-| Feature | Tag |
-|---|---|
-| Large-scale webinar/broadcast mode (view-only, hundreds-thousands) | v3 |
-| Live streaming out (YouTube/Facebook/custom RTMP) | v3 |
-| SIP/PSTN dial-in (join by phone number) | v3 |
-| Multi-device join (same user, multiple devices) | v3 |
-| Admin dashboard: org-wide user management | v3 |
-| Admin dashboard: usage reports | v3 |
-| Admin dashboard: security policies | v3 |
-| Enterprise SSO/SAML | v3 |
-| Role-based access control | v3 |
-| Public API/SDK (embeddable video calls) | v3 |
-| Integration: Slack | v3 |
-| Integration: Jira | v3 |
-| Integration: Notion | v3 |
-| White-labeling / custom branding | v3 |
-| Meeting templates & agendas | v3 |
-| Security: watermarking | v3 |
-| Security: domain-restricted join | v3 |
-| Security: enforced waiting room policies | v3 |
+| Feature                                                                                                                                                                                                                | Tag |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+| Large-scale webinar/broadcast mode (view-only, hundreds-thousands)                                                                                                                                                     | v3  |
+| Live streaming out (YouTube/Facebook/custom RTMP)                                                                                                                                                                      | v3  |
+| SIP/PSTN dial-in (join by phone number)                                                                                                                                                                                | v3  |
+| Multi-device join (same user, multiple devices)                                                                                                                                                                        | v3  |
+| Admin dashboard: org-wide user management                                                                                                                                                                              | v3  |
+| Admin dashboard: usage reports                                                                                                                                                                                         | v3  |
+| Admin dashboard: security policies                                                                                                                                                                                     | v3  |
+| Enterprise SSO/SAML                                                                                                                                                                                                    | v3  |
+| Role-based access control                                                                                                                                                                                              | v3  |
+| Public API/SDK (embeddable video calls)                                                                                                                                                                                | v3  |
+| Integration: Slack                                                                                                                                                                                                     | v3  |
+| Integration: Jira                                                                                                                                                                                                      | v3  |
+| Integration: Notion                                                                                                                                                                                                    | v3  |
+| White-labeling / custom branding                                                                                                                                                                                       | v3  |
+| Meeting templates & agendas                                                                                                                                                                                            | v3  |
+| Security: watermarking                                                                                                                                                                                                 | v3  |
+| Security: domain-restricted join                                                                                                                                                                                       | v3  |
+| Security: enforced waiting room policies                                                                                                                                                                               | v3  |
+| Cross-tab annotation overlay (draw on top of the presenter's OTHER browser tabs, not just inside our call UI) — requires a companion browser extension, separate codebase from the web app; see "Research notes" below | v3  |
 
 ---
 
 ## Tier 4 — v4 (AI-driven — the differentiator layer)
 
-| Feature | Tag |
-|---|---|
-| Live transcription & captions | v4 |
-| Multi-language captions | v4 |
-| **Real-time translation with voice-preserved dubbing** (flagship feature) | v4 |
-| Auto meeting summaries | v4 |
-| Auto action items → push to Jira/Linear/Asana | v4 |
-| AI-powered noise cancellation (smart, adaptive) | v4 |
-| AI-powered virtual backgrounds (smart segmentation) | v4 |
-| AI meeting co-pilot (live Q&A using meeting context) | v4 |
-| Auto chapter markers / smart highlights in recordings | v4 |
-| Searchable meeting history (semantic search across transcripts) | v4 |
-| Auto-generated agenda from calendar invite content | v4 |
-| Engagement/sentiment signals for hosts (talk-time balance, disengagement) | v4 |
+| Feature                                                                   | Tag |
+| ------------------------------------------------------------------------- | --- |
+| Live transcription & captions                                             | v4  |
+| Multi-language captions                                                   | v4  |
+| **Real-time translation with voice-preserved dubbing** (flagship feature) | v4  |
+| Auto meeting summaries                                                    | v4  |
+| Auto action items → push to Jira/Linear/Asana                             | v4  |
+| AI-powered noise cancellation (smart, adaptive)                           | v4  |
+| AI-powered virtual backgrounds (smart segmentation)                       | v4  |
+| AI meeting co-pilot (live Q&A using meeting context)                      | v4  |
+| Auto chapter markers / smart highlights in recordings                     | v4  |
+| Searchable meeting history (semantic search across transcripts)           | v4  |
+| Auto-generated agenda from calendar invite content                        | v4  |
+| Engagement/sentiment signals for hosts (talk-time balance, disengagement) | v4  |
 
 ---
 
 ## Cross-cutting / Non-functional (apply across all tiers — easy to forget, plan early)
 
-| Requirement | Applies from |
-|---|---|
-| Security & compliance: GDPR | v1 |
-| Security & compliance: SOC2 | v3 |
-| Security & compliance: HIPAA (if targeting healthcare) | future/optional |
-| Accessibility: screen reader support | v1 |
-| Accessibility: closed captions for deaf/hard-of-hearing | v2 |
-| i18n: multi-language UI | v2 |
-| Reconnection handling (graceful recovery from network drops) | v1 |
-| Cross-browser/device compatibility testing | v1 (ongoing) |
-| Observability: call quality metrics (jitter, packet loss, MOS) | v1 |
-| Observability: error tracking | v1 |
-| Billing & subscription tiers (free / pro / enterprise) | v2 |
-| Usage-based AI feature gating | v4 |
+| Requirement                                                    | Applies from    |
+| -------------------------------------------------------------- | --------------- |
+| Security & compliance: GDPR                                    | v1              |
+| Security & compliance: SOC2                                    | v3              |
+| Security & compliance: HIPAA (if targeting healthcare)         | future/optional |
+| Accessibility: screen reader support                           | v1              |
+| Accessibility: closed captions for deaf/hard-of-hearing        | v2              |
+| i18n: multi-language UI                                        | v2              |
+| Reconnection handling (graceful recovery from network drops)   | v1              |
+| Cross-browser/device compatibility testing                     | v1 (ongoing)    |
+| Observability: call quality metrics (jitter, packet loss, MOS) | v1              |
+| Observability: error tracking                                  | v1              |
+| Billing & subscription tiers (free / pro / enterprise)         | v2              |
+| Usage-based AI feature gating                                  | v4              |
 
 ---
+
+## Research notes
+
+### Annotation — three distinct capabilities, three different amounts of work
+
+"Annotation" turned out to mean three genuinely different features once scoped. Keep them
+separate in planning — they don't share a codebase, and two of the three aren't achievable
+as a normal web page at all.
+
+**1. In-app whiteboard / draw-on-shared-screen (Tier 2 row above) — buildable in the current stack.**
+Presenter or viewers draw on a blank canvas, or on top of the video element showing the
+active screen share, rendered _inside our own call UI_. This is what Zoom/Meet/Teams mean
+by "annotation" in their own feature lists.
+
+- **Sync transport**: no new infra needed — LiveKit is already integrated, and
+  `LocalParticipant.publishData()` + the `RoomEvent.DataReceived` event (confirmed in
+  `livekit-client`'s own type defs) give us a ready-made low-latency broadcast channel for
+  stroke events to everyone in the room.
+- **Rendering**: an HTML5 `<canvas>` (or a library like `perfect-freehand` for stroke
+  smoothing, or `tldraw` for a fuller whiteboard) absolutely-positioned over the shared-screen
+  `<video>` element; pointer events converted to normalized (0–1) coordinates before
+  broadcasting, so drawings stay aligned regardless of each viewer's own window size.
+- **Open design question**: ephemeral (clears when screen share stops, matching most
+  competitors' default) vs. persisted (needs a DB model + storage, closer to a real
+  whiteboard product) — worth deciding before starting, not mid-build.
+
+**2. Cross-tab overlay — drawing on top of the presenter's OTHER browser tabs (Tier 3 row above) — needs a separate browser extension.**
+This is NOT achievable from our web app itself. Browsers deliberately sandbox a page so it
+can never render pixels on top of a _different_ tab or origin — this restriction exists
+specifically to prevent clickjacking/UI-redressing attacks, so there's no API or workaround
+for a plain page to draw across tab boundaries.
+
+- **What it actually requires**: a browser extension (Manifest V3) with either
+  `host_permissions: ["<all_urls>"]` (works without the user clicking the extension first,
+  but triggers the scariest permission prompt in the Chrome/Firefox store review — "Read and
+  change all your data on all websites") or the lighter `activeTab` permission (extension
+  only gets injected into whichever tab the user explicitly activates it on — much smaller
+  privacy footprint, minor UX cost).
+- **Mechanism**: the extension injects a content script that adds a full-viewport
+  `position: fixed` canvas overlay into the target tab's DOM, toggling
+  `pointer-events: none/auto` to switch between "draw mode" and "let clicks through to the
+  page underneath."
+- **Distribution cost, not just build cost**: this is a genuinely separate codebase and
+  release pipeline from the Next.js app — its own manifest, its own Chrome Web
+  Store / Firefox Add-ons listing and review process (can take days, and `<all_urls>`
+  submissions get extra scrutiny), and its own update cadence independent of the main app.
+- **Still browser-only**: even with the extension, this only reaches other _browser tabs_ —
+  it still can't draw on top of a native app (Slack desktop, VS Code, a PDF viewer, the OS
+  desktop itself). See #3.
+
+**3. True screen-wide overlay — drawing on top of ANY application, not just browser tabs — needs a native desktop app, and is bigger than #2.**
+This is what tools like CoScreen, Zoom's own desktop annotation, and ZoomIt (Sysinternals)
+actually are: not web features at all, but native apps that open an OS-level transparent,
+always-on-top, click-through-toggleable window spanning the whole screen. Confirms this
+genuinely is native-app-class work, not something we're missing a trick for on the web.
+
+- **How it's built**: Electron (or Tauri) `BrowserWindow` with `transparent: true`,
+  `alwaysOnTop: true`, `frame: false`, and `setIgnoreMouseEvents()` toggled between draw
+  mode and pass-through mode. Windows needs the layered/transparent window flags under the
+  hood; macOS needs a borderless `NSWindow` with a clear background — Electron abstracts
+  both, but packaging, code-signing, and (for macOS) notarization become real project
+  costs on top of the feature itself.
+- **Scope**: effectively a second product alongside the web app — its own build/release/
+  auto-update pipeline, own installer, own platform-specific quirks — that then talks to the
+  same backend/LiveKit room via the same data-channel approach as #1 for syncing strokes to
+  other participants.
+- **Not currently scoped anywhere in this roadmap.** Flagging it here so it's a known,
+  deliberate non-goal rather than something that quietly falls off the list — revisit only
+  if a native desktop client ever gets greenlit for other reasons (it would make sense to
+  bundle this with that effort, not build it standalone).
 
 ## Open items
 
 - [ ] Confirm v1 scope with stakeholders before starting build
 - [ ] Define pricing/tier boundaries (what's free vs pro vs enterprise) — ties to billing design
 - [ ] Prioritize order within each tier once v1 scope is locked
+- [ ] Decide ephemeral vs. persisted whiteboard state before starting the Tier 2 annotation feature (see Research notes)
+- [ ] Decide whether cross-tab annotation (Tier 3) is worth a separate browser-extension codebase before scheduling it, given the store-review and maintenance overhead documented above
