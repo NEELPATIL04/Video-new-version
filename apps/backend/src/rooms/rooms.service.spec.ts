@@ -220,6 +220,40 @@ describe('RoomsService', () => {
     });
   });
 
+  describe('lockRoom / unlockRoom', () => {
+    it('lockRoom sets locked: true on an existing room', async () => {
+      prisma.room.findUnique.mockResolvedValue(makeRoom());
+      prisma.room.update.mockResolvedValue(makeRoom({ locked: true }));
+
+      await service.lockRoom('room-1');
+
+      expect(prisma.room.update).toHaveBeenCalledWith({
+        where: { id: 'room-1' },
+        data: { locked: true },
+      });
+    });
+
+    it('unlockRoom sets locked: false on an existing room', async () => {
+      prisma.room.findUnique.mockResolvedValue(makeRoom({ locked: true }));
+      prisma.room.update.mockResolvedValue(makeRoom({ locked: false }));
+
+      await service.unlockRoom('room-1');
+
+      expect(prisma.room.update).toHaveBeenCalledWith({
+        where: { id: 'room-1' },
+        data: { locked: false },
+      });
+    });
+
+    it('lockRoom throws NotFoundException for a missing room', async () => {
+      prisma.room.findUnique.mockResolvedValue(null);
+      await expect(service.lockRoom('nope')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(prisma.room.update).not.toHaveBeenCalled();
+    });
+  });
+
   describe('cancelRoom', () => {
     it("hard-deletes a room that hasn't started yet", async () => {
       prisma.room.findUnique.mockResolvedValue(
@@ -332,6 +366,63 @@ describe('RoomsService', () => {
       });
 
       await expect(service.joinRoom('room-1', 'user-2')).resolves.toBeDefined();
+    });
+
+    it('rejects a brand-new joiner when the room is locked', async () => {
+      prisma.room.findUnique.mockResolvedValue(
+        makeRoom({ status: 'active', locked: true }),
+      );
+      prisma.participant.count.mockResolvedValue(0);
+      prisma.participant.findUnique.mockResolvedValue(null); // not already a member
+
+      await expect(
+        service.joinRoom('room-1', 'stranger'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prisma.participant.upsert).not.toHaveBeenCalled();
+    });
+
+    it('lets an existing member back in while the room is locked (a lock blocks new people, not reconnects)', async () => {
+      prisma.room.findUnique.mockResolvedValue(
+        makeRoom({ status: 'active', locked: true }),
+      );
+      prisma.participant.count.mockResolvedValue(1);
+      prisma.participant.findUnique.mockResolvedValue({ id: 'p-2' }); // already a member
+      prisma.participant.upsert.mockResolvedValue({
+        id: 'p-2',
+        userId: 'user-2',
+        role: 'participant',
+        admittedAt: new Date(),
+        user: { name: 'User Two' },
+      });
+
+      await expect(service.joinRoom('room-1', 'user-2')).resolves.toBeDefined();
+    });
+
+    it('the host is never locked out of their own room (their own Participant row always makes them "existing")', async () => {
+      prisma.room.findUnique.mockResolvedValue(
+        makeRoom({ status: 'active', locked: true, hostId: 'host-1' }),
+      );
+      prisma.participant.count.mockResolvedValue(1);
+      prisma.participant.findUnique.mockResolvedValue({ id: 'p-host' }); // host's own row
+      prisma.participant.upsert.mockResolvedValue({
+        id: 'p-host',
+        userId: 'host-1',
+        role: 'host',
+        admittedAt: new Date(),
+        user: { name: 'Host' },
+      });
+
+      await expect(service.joinRoom('room-1', 'host-1')).resolves.toBeDefined();
+    });
+
+    it('a locked room still enforces the ended-room check first', async () => {
+      prisma.room.findUnique.mockResolvedValue(
+        makeRoom({ status: 'ended', locked: true }),
+      );
+
+      await expect(
+        service.joinRoom('room-1', 'stranger'),
+      ).rejects.toBeInstanceOf(ConflictException);
     });
 
     it('always assigns the participant role on join — never accepts a client-supplied role', async () => {

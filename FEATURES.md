@@ -50,7 +50,7 @@ shipped and stable, per the tier-order rule.
 | Polls & Q&A                                                                                                              | v2  |
 | Collaborative whiteboard/annotation (in-app: blank canvas + draw-on-shared-screen, inside our own video call UI)         | v2  |
 | In-chat file sharing                                                                                                     | v2  |
-| Meeting lock (block new joiners mid-call)                                                                                | v2  |
+| Meeting lock — **done**, `Room.locked` + host-only lock/unlock endpoints — see Research notes                            | v2  |
 | Co-host / multiple hosts                                                                                                 | v2  |
 | Layout: grid view                                                                                                        | v2  |
 | Layout: speaker view                                                                                                     | v2  |
@@ -314,6 +314,41 @@ LiveKit itself restarted the room state would legitimately reset too. It's
 live call state, matching how nothing else about the in-call UI (camera
 background choice, noise cancellation on/off) is persisted to Postgres
 either.
+
+### Meeting lock — reusing joinRoom's existing-member check instead of writing a new one
+
+The one design decision worth writing down for this feature: "locked"
+had to mean "block brand-new joiners," not "kick out anyone who blinks."
+`RoomsService.joinRoom` already had to answer a closely related question
+for the capacity gate — is this caller a genuinely NEW joiner, or someone
+who already has a `Participant` row and is just rejoining (duplicate tab,
+flaky connection)? That existing lookup is reused as-is for the lock check
+rather than writing separate "is this participant currently admitted"
+logic, for two reasons:
+
+- **It's simpler** — one lookup, two gates, instead of two lookups that
+  are supposed to agree.
+- **It's safer** — if the lock check and the capacity check ever used
+  different definitions of "already a member," they could disagree with
+  each other about who counts as new. A participant who somehow passed
+  one check but not the other would be a confusing, hard-to-reproduce bug.
+  Reusing the exact same value makes that class of bug impossible by
+  construction.
+
+A pleasant side effect: the host is automatically exempt from ever being
+locked out of their own meeting, with no special-case code. Their own
+`Participant` row is created transactionally in `createRoom`, so the
+existing-member lookup is always truthy for them — "the host can't lock
+themselves out" falls out of "an existing member can always get back in,"
+rather than needing its own `if (userId === room.hostId)` branch to get
+right (and potentially get wrong).
+
+No new DB migration complexity either: `Room.locked` has a real default
+(`false`), so unlike the `joinCode` migration (which needed a
+nullable-column-then-backfill two-step because every existing row needed
+a _unique_ generated value with no natural default), this one is a single
+`ALTER TABLE ... ADD COLUMN ... DEFAULT false` — Postgres backfills every
+existing row with that default directly, no manual UPDATE needed.
 
 ## Open items
 

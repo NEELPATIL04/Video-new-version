@@ -36,15 +36,16 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
     throw new ApiError(res.status, data.message ?? "Request failed");
   }
 
-  // Several host-action endpoints (admit/deny/mute/remove/lower-hand) reply
-  // 200 OK with no body at all (the service methods return void) — not
-  // just 204. res.json() on a genuinely empty body throws "Unexpected end
-  // of JSON input", which surfaces as an unhandled rejection in whatever
-  // called apiFetch (e.g. WaitingRoomHostPanel's handleAdmit) and was
-  // caught live via a Playwright pageerror while writing e2e coverage for
-  // raise-hand. Reading as text first and treating an empty body as
-  // "no payload" handles both the 204 case and this 200-with-empty-body
-  // case the same way, without guessing at which endpoints do which.
+  // Several host-action endpoints (admit/deny/mute/remove/lower-hand/
+  // lock/unlock) reply 200 OK with no body at all (the service methods
+  // return void) — not just 204. res.json() on a genuinely empty body
+  // throws "Unexpected end of JSON input", which surfaces as an unhandled
+  // rejection in whatever called apiFetch (e.g. WaitingRoomHostPanel's
+  // handleAdmit) — caught live via Playwright while writing e2e coverage
+  // for both raise-hand and meeting-lock independently. Reading as text
+  // first and treating an empty body as "no payload" handles both the
+  // 204 case and this 200-with-empty-body case the same way, without
+  // guessing at which endpoints do which.
   const text = await res.text();
   if (!text) return undefined as T;
   return JSON.parse(text) as T;

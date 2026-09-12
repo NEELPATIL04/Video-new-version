@@ -140,6 +140,28 @@ export class RoomsService {
     });
   }
 
+  // Host-only toggle (guarded by RoomHostGuard at the controller level, same
+  // as updateRoom/cancelRoom/endRoom above — no hostId param needed here
+  // since the guard already re-verified ownership at the DB level before
+  // this method ever runs). Blocks brand-new joiners in joinRoom above;
+  // never affects anyone who already has a Participant row, including the
+  // host themselves.
+  async lockRoom(roomId: string) {
+    await this.getRoomById(roomId);
+    return this.prisma.room.update({
+      where: { id: roomId },
+      data: { locked: true },
+    });
+  }
+
+  async unlockRoom(roomId: string) {
+    await this.getRoomById(roomId);
+    return this.prisma.room.update({
+      where: { id: roomId },
+      data: { locked: false },
+    });
+  }
+
   // Hard delete — only while nothing has happened yet. Once a room has
   // gone active (someone joined) or ended, its participant/recording
   // history must be preserved; use endRoom for that case instead.
@@ -197,6 +219,18 @@ export class RoomsService {
     const existing = await this.prisma.participant.findUnique({
       where: { roomId_userId: { roomId, userId } },
     });
+
+    // A locked room blocks brand-new joiners only — reusing this exact
+    // `existing` check (not new "is this an admitted member" logic) is
+    // deliberate: it's the same distinction the capacity gate above
+    // already makes, and using anything else here risks the lock and the
+    // capacity gate disagreeing about who counts as "already in this
+    // room". This also means the host is automatically exempt (their own
+    // Participant row is created in createRoom, so `existing` is always
+    // truthy for them) without needing a separate host special-case.
+    if (room.locked && !existing) {
+      throw new ForbiddenException('This meeting is locked');
+    }
 
     if (!existing && admittedCount >= room.maxParticipants) {
       throw new ForbiddenException('This meeting is full');

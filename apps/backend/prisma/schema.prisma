@@ -82,6 +82,14 @@ model Room {
   // security surprise for anyone who kept a stale code around.
   joinCode String @unique
 
+  // Host-controlled: blocks brand-new joiners from RoomsService.joinRoom
+  // while true. Deliberately does NOT affect anyone who already has a
+  // Participant row for this room (see joinRoom's own comment) — "locked"
+  // means "no new people," not "kick out anyone who blinks," so an
+  // already-admitted participant reconnecting after a network drop, and
+  // the host themselves, are never affected by this flag.
+  locked Boolean @default(false)
+
   hostId String
   host   User   @relation("RoomHost", fields: [hostId], references: [id])
 
