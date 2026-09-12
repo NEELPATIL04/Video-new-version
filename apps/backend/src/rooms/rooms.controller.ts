@@ -80,6 +80,25 @@ export class RoomsController {
     return this.rooms.endRoom(id);
   }
 
+  // Host-only. Blocks brand-new joiners in joinRoom (see the service's own
+  // comment on why it reuses the exact same "existing member" check as the
+  // capacity gate) — never affects anyone already admitted, including the
+  // host. Returns the updated room so the client can reflect the new
+  // locked state without a second fetch.
+  @UseGuards(RoomHostGuard)
+  @Post(':id/lock')
+  @HttpCode(HttpStatus.OK)
+  lock(@Param('id') id: string) {
+    return this.rooms.lockRoom(id);
+  }
+
+  @UseGuards(RoomHostGuard)
+  @Post(':id/unlock')
+  @HttpCode(HttpStatus.OK)
+  unlock(@Param('id') id: string) {
+    return this.rooms.unlockRoom(id);
+  }
+
   // A host is admitted immediately; anyone else lands in the waiting room
   // (status: 'waiting') until the host admits or denies them — see
   // RoomsService.joinRoom/buildJoinResult for why a LiveKit token is only
