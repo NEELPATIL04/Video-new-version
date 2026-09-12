@@ -117,6 +117,32 @@ describe('RoomsService', () => {
       });
       expect(result).toBe(room);
     });
+
+    it('rejects a scheduledFor date that is not in the future', async () => {
+      await expect(
+        service.createRoom('host-1', {
+          name: 'Standup',
+          scheduledFor: new Date(Date.now() - 60_000).toISOString(),
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.room.create).not.toHaveBeenCalled();
+    });
+
+    it('accepts a scheduledFor date in the future', async () => {
+      const room = makeRoom({ status: 'scheduled' });
+      prisma.room.create.mockResolvedValue(room);
+      prisma.participant.create.mockResolvedValue({ id: 'p-1', role: 'host' });
+      const future = new Date(Date.now() + 60 * 60_000).toISOString();
+
+      await service.createRoom('host-1', {
+        name: 'Standup',
+        scheduledFor: future,
+      });
+
+      expect(prisma.room.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ scheduledFor: new Date(future) }),
+      });
+    });
   });
 
   describe('getRoomById', () => {

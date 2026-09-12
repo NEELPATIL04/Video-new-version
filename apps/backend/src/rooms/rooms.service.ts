@@ -37,6 +37,10 @@ export class RoomsService {
   ) {}
 
   async createRoom(hostId: string, dto: CreateRoomDto) {
+    if (dto.scheduledFor && new Date(dto.scheduledFor) <= new Date()) {
+      throw new BadRequestException('scheduledFor must be in the future');
+    }
+
     // Room + the host's own Participant row must be created together — a
     // room that exists with no host membership row would break
     // listParticipants and the membership guard for its own creator.
