@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { LiveKitRoom, VideoConference } from "@livekit/components-react";
 import { HostControls } from "./HostControls";
+import { WaitingRoomHostPanel } from "./WaitingRoomHostPanel";
 
 interface CallRoomProps {
   roomId: string;
@@ -38,11 +39,20 @@ export function CallRoom({ roomId, liveKitUrl, liveKitToken, isHost }: CallRoomP
       onDisconnected={() => router.push("/rooms")}
     >
       <VideoConference />
-      {/* Inside LiveKitRoom's context so it can read the live participant
-          list — HostControls itself gates rendering when no one else has
-          joined yet, but the isHost check happens here so a non-host
-          never even mounts a component with mute/remove actions. */}
-      {isHost && <HostControls roomId={roomId} />}
+      {/* Inside LiveKitRoom's context so HostControls can read the live
+          participant list — HostControls itself gates rendering when no
+          one else has joined yet, but the isHost check happens here so a
+          non-host never even mounts a component with mute/remove actions.
+          WaitingRoomHostPanel doesn't need LiveKit's context (it polls
+          the DB directly, since a waiting participant isn't connected to
+          LiveKit at all yet) but lives alongside the other host-only
+          overlays for the same reason. */}
+      {isHost && (
+        <>
+          <HostControls roomId={roomId} />
+          <WaitingRoomHostPanel roomId={roomId} />
+        </>
+      )}
     </LiveKitRoom>
   );
 }

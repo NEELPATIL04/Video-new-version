@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useAuthStore } from "@/features/auth/store";
 import { joinRoom, type JoinRoomResponse } from "@/features/rooms/api";
 import { CallRoom } from "@/features/rooms/components/CallRoom";
+import { WaitingRoom } from "@/features/rooms/components/WaitingRoom";
 import { ApiError } from "@/lib/api-client";
 
 export default function RoomCallPage() {
@@ -54,6 +55,21 @@ export default function RoomCallPage() {
     return (
       <main className="flex flex-col items-center justify-center flex-1 gap-4">
         <p className="text-sm text-red-600">{error}</p>
+        <button onClick={() => router.push("/rooms")} className="underline text-sm">
+          Back to meetings
+        </button>
+      </main>
+    );
+  }
+
+  if (joinResult!.status === "waiting") {
+    return <WaitingRoom roomId={id} accessToken={accessToken!} onSettled={setJoinResult} />;
+  }
+
+  if (joinResult!.status === "denied") {
+    return (
+      <main className="flex flex-col items-center justify-center flex-1 gap-4">
+        <p className="text-sm text-red-600">The host didn&apos;t admit you to this meeting.</p>
         <button onClick={() => router.push("/rooms")} className="underline text-sm">
           Back to meetings
         </button>

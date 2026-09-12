@@ -43,7 +43,10 @@ export function HostControls({ roomId }: HostControlsProps) {
   };
 
   return (
-    <div className="absolute top-4 right-4 z-10 bg-black/80 text-white rounded p-3 text-sm w-56">
+    <div
+      data-testid="host-controls"
+      className="absolute top-4 right-4 z-10 bg-black/80 text-white rounded p-3 text-sm w-56"
+    >
       <p className="font-medium mb-2">Host controls</p>
       <ul className="flex flex-col gap-2">
         {others.map((p) => (
