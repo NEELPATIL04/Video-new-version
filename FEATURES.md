@@ -39,28 +39,28 @@ shipped and stable, per the tier-order rule.
 
 ## Tier 2 — v2 (standard — competitive parity with Meet/Zoom)
 
-| Feature                                                                                                          | Tag |
-| ---------------------------------------------------------------------------------------------------------------- | --- |
-| Virtual backgrounds — **done**, via `@livekit/track-processors` (MediaPipe segmentation, client-side only)       | v2  |
-| Background blur — **done**, same feature/implementation as virtual backgrounds above                             | v2  |
-| Noise cancellation                                                                                               | v2  |
-| Breakout rooms                                                                                                   | v2  |
-| Reactions/emojis                                                                                                 | v2  |
-| Raise hand                                                                                                       | v2  |
-| Polls & Q&A                                                                                                      | v2  |
-| Collaborative whiteboard/annotation (in-app: blank canvas + draw-on-shared-screen, inside our own video call UI) | v2  |
-| In-chat file sharing                                                                                             | v2  |
-| Meeting lock (block new joiners mid-call)                                                                        | v2  |
-| Co-host / multiple hosts                                                                                         | v2  |
-| Layout: grid view                                                                                                | v2  |
-| Layout: speaker view                                                                                             | v2  |
-| Layout: gallery view                                                                                             | v2  |
-| Picture-in-picture mode                                                                                          | v2  |
-| Device picker (mic/camera/speaker)                                                                               | v2  |
-| Network quality indicator                                                                                        | v2  |
-| Meeting analytics (attendance, duration, join/leave times)                                                       | v2  |
-| Recording sharing (permissioned link)                                                                            | v2  |
-| End-to-end encryption toggle                                                                                     | v2  |
+| Feature                                                                                                                  | Tag |
+| ------------------------------------------------------------------------------------------------------------------------ | --- |
+| Virtual backgrounds — **done**, via `@livekit/track-processors` (MediaPipe segmentation, client-side only)               | v2  |
+| Background blur — **done**, same feature/implementation as virtual backgrounds above                                     | v2  |
+| Noise cancellation — **done**, via RNNoise (not LiveKit's Krisp package — that's LiveKit Cloud-only, see Research notes) | v2  |
+| Breakout rooms                                                                                                           | v2  |
+| Reactions/emojis                                                                                                         | v2  |
+| Raise hand                                                                                                               | v2  |
+| Polls & Q&A                                                                                                              | v2  |
+| Collaborative whiteboard/annotation (in-app: blank canvas + draw-on-shared-screen, inside our own video call UI)         | v2  |
+| In-chat file sharing                                                                                                     | v2  |
+| Meeting lock (block new joiners mid-call)                                                                                | v2  |
+| Co-host / multiple hosts                                                                                                 | v2  |
+| Layout: grid view                                                                                                        | v2  |
+| Layout: speaker view                                                                                                     | v2  |
+| Layout: gallery view                                                                                                     | v2  |
+| Picture-in-picture mode                                                                                                  | v2  |
+| Device picker (mic/camera/speaker)                                                                                       | v2  |
+| Network quality indicator                                                                                                | v2  |
+| Meeting analytics (attendance, duration, join/leave times)                                                               | v2  |
+| Recording sharing (permissioned link)                                                                                    | v2  |
+| End-to-end encryption toggle                                                                                             | v2  |
 
 ---
 
@@ -217,6 +217,32 @@ genuinely is native-app-class work, not something we're missing a trick for on t
   deliberate non-goal rather than something that quietly falls off the list — revisit only
   if a native desktop client ever gets greenlit for other reasons (it would make sense to
   bundle this with that effort, not build it standalone).
+
+### Noise cancellation — LiveKit's own official package doesn't work for a self-hosted server
+
+Worth flagging clearly since it's the kind of thing that looks like the obvious choice at a
+glance: LiveKit ships `@livekit/krisp-noise-filter`, wrapping the commercial Krisp noise
+cancellation engine, as their own first-party solution. **It's locked to LiveKit Cloud
+accounts** — confirmed against LiveKit's own docs, and against a GitHub issue on
+`livekit/client-sdk-js` where someone asked exactly "is there any way to use Krisp with
+self-hosted LiveKit?" — closed **"not planned"** by LiveKit's maintainers. This isn't a
+pricing tier we could pay our way into; self-hosted deployments (this project's deliberate
+choice — see TECH_STACK.md §5) simply aren't supported.
+
+Shipped with **RNNoise** instead (`@sapphi-red/web-noise-suppressor`) — a genuinely
+open-source (BSD-licensed, xiph.org) neural noise-suppression model, the same _class_ of
+technology Krisp uses, just not tied to anyone's cloud billing. Implemented as a custom
+LiveKit `TrackProcessor`, modeled directly on `@livekit/track-processors`' own
+`GainAudioProcessor` — that class's source is explicitly documented as "a reference
+implementation for building custom audio processors," which is exactly what made this
+straightforward: same Web Audio graph shape (source → effect → destination), just a
+different effect node.
+
+Practical note for anyone touching this again: Next.js has no Vite-style `?url` import for
+vendoring a package's binary assets, so the AudioWorklet script + WASM binaries are copied
+from `node_modules` into `apps/web/public/rnnoise/` at install time
+(`scripts/copy-rnnoise-assets.mjs`, wired to `postinstall`) rather than committed — commit
+the script, not the copied output.
 
 ## Open items
 
