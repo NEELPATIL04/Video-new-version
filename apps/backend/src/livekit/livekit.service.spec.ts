@@ -1,7 +1,31 @@
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
-import { TokenVerifier } from 'livekit-server-sdk';
-import { LiveKitService } from './livekit.service';
+import { ServerError, TokenVerifier } from 'livekit-server-sdk';
+import {
+  LiveKitParticipantNotConnectedError,
+  LiveKitService,
+} from './livekit.service';
+
+// Only RoomServiceClient is mocked here (the server-to-server admin API
+// that talks to a real LiveKit server over HTTP) — AccessToken/
+// TokenVerifier/ServerError above are the genuine SDK classes, same as
+// the rest of this file's "real signing, not a stub" approach.
+const mockGetParticipant = jest.fn();
+const mockMutePublishedTrack = jest.fn();
+const mockRemoveParticipant = jest.fn();
+const mockUpdateParticipant = jest.fn();
+jest.mock('livekit-server-sdk', () => {
+  const actual = jest.requireActual('livekit-server-sdk');
+  return {
+    ...actual,
+    RoomServiceClient: jest.fn().mockImplementation(() => ({
+      getParticipant: mockGetParticipant,
+      mutePublishedTrack: mockMutePublishedTrack,
+      removeParticipant: mockRemoveParticipant,
+      updateParticipant: mockUpdateParticipant,
+    })),
+  };
+});
 
 // Real AccessToken/TokenVerifier are used (not mocked) — round-tripping an
 // actual signed JWT is the only way to prove the grants we think we're
@@ -141,5 +165,70 @@ describe('LiveKitService', () => {
 
   it('getUrl returns the configured LiveKit URL', () => {
     expect(service.getUrl()).toBe('ws://localhost:7880');
+  });
+
+  // Real evidence this shape is right, not a guess: while building
+  // lower-hand, calling RoomServiceClient.updateParticipant() against a
+  // participant not currently in the live LiveKit room produced a real
+  // Twirp response with statusText "Not Found" (status 404) and a `code`
+  // of the unhelpfully generic "unknown" — which is exactly why this is
+  // matched on `status`, not `code` or the message string.
+  describe('translating LiveKit "participant not found" into a typed error', () => {
+    beforeEach(() => {
+      mockGetParticipant.mockReset();
+      mockMutePublishedTrack.mockReset();
+      mockRemoveParticipant.mockReset();
+      mockUpdateParticipant.mockReset();
+    });
+
+    const notFoundError = () =>
+      new ServerError(
+        'Not Found',
+        'twirp error unknown: participant does not exist',
+        404,
+        'unknown',
+      );
+
+    it('muteParticipantAudio throws LiveKitParticipantNotConnectedError on a 404', async () => {
+      mockGetParticipant.mockRejectedValue(notFoundError());
+
+      await expect(
+        service.muteParticipantAudio('room-1', 'user-2'),
+      ).rejects.toBeInstanceOf(LiveKitParticipantNotConnectedError);
+    });
+
+    it('removeParticipant throws LiveKitParticipantNotConnectedError on a 404', async () => {
+      mockRemoveParticipant.mockRejectedValue(notFoundError());
+
+      await expect(
+        service.removeParticipant('room-1', 'user-2'),
+      ).rejects.toBeInstanceOf(LiveKitParticipantNotConnectedError);
+    });
+
+    it('setHandRaised throws LiveKitParticipantNotConnectedError on a 404', async () => {
+      mockUpdateParticipant.mockRejectedValue(notFoundError());
+
+      await expect(
+        service.setHandRaised('room-1', 'user-2', false),
+      ).rejects.toBeInstanceOf(LiveKitParticipantNotConnectedError);
+    });
+
+    it('does not swallow an unrelated LiveKit error (e.g. a real 500) as "not connected"', async () => {
+      mockRemoveParticipant.mockRejectedValue(
+        new ServerError('Internal Server Error', 'boom', 500, 'internal'),
+      );
+
+      await expect(
+        service.removeParticipant('room-1', 'user-2'),
+      ).rejects.toThrow('boom');
+    });
+
+    it('does not swallow a non-LiveKit error either', async () => {
+      mockRemoveParticipant.mockRejectedValue(new Error('network down'));
+
+      await expect(
+        service.removeParticipant('room-1', 'user-2'),
+      ).rejects.toThrow('network down');
+    });
   });
 });
