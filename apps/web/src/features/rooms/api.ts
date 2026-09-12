@@ -14,6 +14,10 @@ export interface Room {
   // the waiting room + auth are — just needs to be easy to read aloud
   // and type back in.
   joinCode: string;
+  // Host-controlled. While true, joinRoom rejects any brand-new joiner
+  // with a 403 ("This meeting is locked") but never affects someone who
+  // already has a Participant row — including the host.
+  locked: boolean;
 }
 
 export interface WaitingParticipant {
@@ -113,4 +117,17 @@ export function removeParticipant(roomId: string, targetUserId: string, accessTo
     method: "POST",
     accessToken,
   });
+}
+
+// Host-only — blocks/unblocks brand-new joiners mid-call. Returns the
+// updated room so the caller can reflect the new locked state without a
+// second fetch. Same BOLA note as the other host actions: the backend
+// re-verifies at the DB level (RoomHostGuard), so this is safe to expose
+// to any signed-in user.
+export function lockRoom(id: string, accessToken: string) {
+  return apiFetch<Room>(`/rooms/${id}/lock`, { method: "POST", accessToken });
+}
+
+export function unlockRoom(id: string, accessToken: string) {
+  return apiFetch<Room>(`/rooms/${id}/unlock`, { method: "POST", accessToken });
 }

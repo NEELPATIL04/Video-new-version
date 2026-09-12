@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { LiveKitRoom, VideoConference } from "@livekit/components-react";
 import { HostControls } from "./HostControls";
+import { MeetingLockControl } from "./MeetingLockControl";
 import { ReactionsControl } from "./ReactionsControl";
 import { WaitingRoomHostPanel } from "./WaitingRoomHostPanel";
 
@@ -69,6 +70,7 @@ export function CallRoom({ roomId, liveKitUrl, liveKitToken, isHost }: CallRoomP
         <>
           <HostControls roomId={roomId} />
           <WaitingRoomHostPanel roomId={roomId} />
+          <MeetingLockControl roomId={roomId} />
         </>
       )}
       {/* Every participant controls their own camera background and mic
