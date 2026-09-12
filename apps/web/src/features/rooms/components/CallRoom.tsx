@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { LiveKitRoom, VideoConference } from "@livekit/components-react";
 import { HostControls } from "./HostControls";
 import { ReactionsControl } from "./ReactionsControl";
+import { RaiseHandControl } from "./RaiseHandControl";
 import { WaitingRoomHostPanel } from "./WaitingRoomHostPanel";
 
 // @livekit/track-processors pulls in MediaPipe's WASM segmentation model
@@ -77,10 +78,15 @@ export function CallRoom({ roomId, liveKitUrl, liveKitToken, isHost }: CallRoomP
           the other two: useDataChannel is LiveKit's own hook, already
           proven safe to import directly (HostControls does the same
           with useParticipants), unlike the third-party WASM libraries
-          the other controls load. */}
+          the other controls load. Same reasoning for RaiseHandControl
+          (useLocalParticipant/useParticipants, both LiveKit's own hooks)
+          — anyone can raise their own hand, not just the host; isHost is
+          only used inside it to decide whether to show the "lower
+          someone else's hand" action. */}
       <BackgroundEffectsControl />
       <NoiseCancellationControl />
       <ReactionsControl />
+      <RaiseHandControl roomId={roomId} isHost={isHost} />
     </LiveKitRoom>
   );
 }
