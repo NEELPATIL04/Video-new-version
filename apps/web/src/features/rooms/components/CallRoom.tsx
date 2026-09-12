@@ -15,6 +15,13 @@ const BackgroundEffectsControl = dynamic(
   { ssr: false },
 );
 
+// Same reasoning as above — @sapphi-red/web-noise-suppressor loads an
+// AudioWorklet + WASM binary, both browser-only.
+const NoiseCancellationControl = dynamic(
+  () => import("./NoiseCancellationControl").then((m) => m.NoiseCancellationControl),
+  { ssr: false },
+);
+
 interface CallRoomProps {
   roomId: string;
   liveKitUrl: string;
@@ -63,9 +70,10 @@ export function CallRoom({ roomId, liveKitUrl, liveKitToken, isHost }: CallRoomP
           <WaitingRoomHostPanel roomId={roomId} />
         </>
       )}
-      {/* Every participant controls their own camera background, not
-          just the host. */}
+      {/* Every participant controls their own camera background and mic
+          noise cancellation, not just the host. */}
       <BackgroundEffectsControl />
+      <NoiseCancellationControl />
     </LiveKitRoom>
   );
 }

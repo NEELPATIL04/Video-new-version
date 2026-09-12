@@ -9,6 +9,10 @@ build/
 out/
 .turbo/
 
+# Generated at install time from node_modules (scripts/copy-rnnoise-assets.mjs)
+# — committing these would drift from whatever version is actually installed.
+apps/web/public/rnnoise/
+
 # Env
 .env
 .env.local

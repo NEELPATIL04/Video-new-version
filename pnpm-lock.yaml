@@ -289,6 +289,9 @@ importers:
       "@livekit/track-processors":
         specifier: 0.8.0
         version: 0.8.0(@types/dom-mediacapture-transform@0.1.12)(livekit-client@2.22.3(@types/dom-mediacapture-record@1.0.22))
+      "@sapphi-red/web-noise-suppressor":
+        specifier: 0.4.0
+        version: 0.4.0
       "@tanstack/react-query":
         specifier: ^5.102.8
         version: 5.102.8(react@19.2.8)
@@ -2189,6 +2192,12 @@ packages:
     resolution:
       {
         integrity: sha512-zt6OdqaDoOnJ1ZYsCYGt9YmWzDXl4vQdKTyJev62gFhRGKdx7mcT54V9KIjg+d2wi9EXsPvAPKe7i7WjfVWB8g==,
+      }
+
+  "@sapphi-red/web-noise-suppressor@0.4.0":
+    resolution:
+      {
+        integrity: sha512-vkBEL/VDkbeP3qqSRQFRtPLGa19a38JUzO6J0r5D/MQSumrlERy671DAMaETgY6etXjDCoJcD7JBIaXnuGVtVw==,
       }
 
   "@simple-libs/child-process-utils@2.0.0":
@@ -9874,6 +9883,8 @@ snapshots:
       "@prisma/debug": 5.22.0
 
   "@rtsao/scc@1.1.0": {}
+
+  "@sapphi-red/web-noise-suppressor@0.4.0": {}
 
   "@simple-libs/child-process-utils@2.0.0":
     dependencies:

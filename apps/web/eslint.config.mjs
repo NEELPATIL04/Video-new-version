@@ -45,6 +45,11 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // public/ is served as static assets, not our source — includes
+    // third-party files copied in at install time (see
+    // scripts/copy-rnnoise-assets.mjs), which are minified and not ours
+    // to lint.
+    "public/**",
   ]),
 ]);
 
