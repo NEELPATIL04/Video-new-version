@@ -45,7 +45,7 @@ shipped and stable, per the tier-order rule.
 | Background blur — **done**, same feature/implementation as virtual backgrounds above                                     | v2  |
 | Noise cancellation — **done**, via RNNoise (not LiveKit's Krisp package — that's LiveKit Cloud-only, see Research notes) | v2  |
 | Breakout rooms                                                                                                           | v2  |
-| Reactions/emojis                                                                                                         | v2  |
+| Reactions/emojis — **done**, via LiveKit's own data channel (`useDataChannel`) — see Research notes                      | v2  |
 | Raise hand                                                                                                               | v2  |
 | Polls & Q&A                                                                                                              | v2  |
 | Collaborative whiteboard/annotation (in-app: blank canvas + draw-on-shared-screen, inside our own video call UI)         | v2  |
@@ -243,6 +243,28 @@ vendoring a package's binary assets, so the AudioWorklet script + WASM binaries 
 from `node_modules` into `apps/web/public/rnnoise/` at install time
 (`scripts/copy-rnnoise-assets.mjs`, wired to `postinstall`) rather than committed — commit
 the script, not the copied output.
+
+### Reactions/emojis — alternatives comparison (standing practice, not a one-off)
+
+Per explicit instruction: before defaulting to a platform's own built-in mechanism for a
+feature, compare it against real alternatives on two criteria — does it add any NEW security
+surface, and is it genuinely open source (not just "has a free tier"). Applying that here:
+
+| Option                                                      | Open source?                        | Security surface                                                                                                            |
+| ----------------------------------------------------------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| **LiveKit's own data channel** (chosen)                     | Yes — Apache 2.0                    | None new — reuses the call's already-authenticated, already-encrypted WebRTC connection                                     |
+| A new NestJS WebSocket gateway                              | Yes (Socket.IO, MIT)                | New authenticated connection + new room-broadcast logic to secure independently, for no functional gain                     |
+| Third-party realtime SaaS (Pusher, Ably, Firebase Realtime) | **No** — commercial, fails outright | Also sends live user activity to a third party's servers regardless of cost                                                 |
+| Self-hosted broker (Redis Pub/Sub, NATS, MQTT)              | Yes                                 | A whole extra network-exposed service to run, patch, and secure, duplicating a capability LiveKit already provides for free |
+
+LiveKit's data channel won on the merits, not convenience — it's the only option that
+requires building nothing new to secure at all. Implemented via
+`@livekit/components-react`'s own `useDataChannel` hook (topic `"reactions"`, kept distinct
+from LiveKit's built-in chat topic `"lk.chat"` — one data channel per room, topics just
+filter). Sent lossy (not reliable) since a dropped reaction just never appears, which is
+fine for something this ephemeral. Shown as a simple fading toast rather than attached to a
+sender's video tile — the latter would mean forking `VideoConference`'s grid layout, a much
+bigger change for a cosmetic touch.
 
 ## Open items
 
