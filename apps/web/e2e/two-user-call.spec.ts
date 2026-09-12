@@ -102,8 +102,19 @@ test.describe.serial("call flow", () => {
     await expect(pageA.getByRole("button", { name: /Leave/i })).toBeVisible({ timeout: 15_000 });
 
     // User B (participant) joins the SAME room via the URL A ended up on —
-    // the real-world equivalent of A sharing the meeting link with B.
+    // the real-world equivalent of A sharing the meeting link with B. Any
+    // non-host now lands in the waiting room first (see waiting-room.spec.ts
+    // for that flow in detail) — the host has to admit them before they
+    // reach the actual call.
     await pageB.goto(roomUrl);
+    await expect(pageB.getByText("Waiting for the host to let you in")).toBeVisible({ timeout: 10_000 });
+    // Scoped to the waiting-room panel specifically (data-testid) rather
+    // than a bare listitem — HostControls renders its own <li> list too,
+    // and once B is admitted and connects, both could momentarily show
+    // B's name at once, making an unscoped listitem locator ambiguous.
+    const waitingPanel = pageA.getByTestId("waiting-room-host-panel");
+    await expect(waitingPanel.getByRole("listitem").filter({ hasText: nameB })).toBeVisible({ timeout: 10_000 });
+    await waitingPanel.getByRole("listitem").filter({ hasText: nameB }).getByRole("button", { name: "Admit" }).click();
     await expect(pageB.getByRole("button", { name: /Leave/i })).toBeVisible({ timeout: 15_000 });
   });
 
@@ -165,8 +176,16 @@ test.describe.serial("call flow", () => {
       )
       .toBe(true);
 
-    // Host mutes B through the actual HostControls UI.
-    await pageA.getByRole("listitem").filter({ hasText: nameB }).getByRole("button", { name: "Mute" }).click();
+    // Host mutes B through the actual HostControls UI. Scoped to the
+    // host-controls panel (data-testid) rather than a bare listitem —
+    // WaitingRoomHostPanel's own <li> list is empty by this point (B is
+    // long admitted), but staying scoped keeps this robust regardless.
+    await pageA
+      .getByTestId("host-controls")
+      .getByRole("listitem")
+      .filter({ hasText: nameB })
+      .getByRole("button", { name: "Mute" })
+      .click();
 
     // The real proof: query LiveKit's own server-side state directly,
     // rather than trust a DOM icon that may or may not reflect reality.
@@ -185,7 +204,12 @@ test.describe.serial("call flow", () => {
   });
 
   test("host can remove a participant, who is then disconnected from the call", async () => {
-    await pageA.getByRole("listitem").filter({ hasText: nameB }).getByRole("button", { name: "Remove" }).click();
+    await pageA
+      .getByTestId("host-controls")
+      .getByRole("listitem")
+      .filter({ hasText: nameB })
+      .getByRole("button", { name: "Remove" })
+      .click();
 
     // B's onDisconnected handler (CallRoom) pushes back to /rooms once
     // LiveKit actually terminates their connection — this only passes if

@@ -7,6 +7,15 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false,
+  // fullyParallel:false only serializes tests WITHIN a file — Playwright
+  // still runs separate spec files concurrently in separate workers by
+  // default. Every spec here registers real accounts against the same
+  // backend, which rate-limits /auth/register to 5/min; two files
+  // registering in parallel doubles that pressure and trips it. One
+  // worker keeps every file's traffic pattern realistic instead of
+  // fighting the same throttle two specs deliberately don't know about
+  // each other.
+  workers: 1,
   retries: 0,
   reporter: "list",
   use: {
