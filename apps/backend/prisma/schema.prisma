@@ -89,6 +89,12 @@ model Participant {
   role     RoomRole
   joinedAt DateTime  @default(now())
   leftAt   DateTime?
+  // null = sitting in the waiting room, not yet let into the call. Set
+  // once, at creation for the host (auto-admitted) or by a host's admit
+  // action for anyone else — never reset on a later reconnect, so a
+  // flaky connection doesn't force a returning participant back through
+  // the waiting room.
+  admittedAt DateTime?
 
   roomId String
   room   Room   @relation(fields: [roomId], references: [id])

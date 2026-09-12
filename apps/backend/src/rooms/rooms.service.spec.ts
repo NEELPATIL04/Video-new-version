@@ -34,6 +34,8 @@ describe('RoomsService', () => {
   let liveKit: {
     muteParticipantAudio: jest.Mock;
     removeParticipant: jest.Mock;
+    createAccessToken: jest.Mock;
+    getUrl: jest.Mock;
   };
 
   const makeRoom = (overrides: Record<string, unknown> = {}) => ({
@@ -79,6 +81,8 @@ describe('RoomsService', () => {
     liveKit = {
       muteParticipantAudio: jest.fn(),
       removeParticipant: jest.fn(),
+      createAccessToken: jest.fn().mockResolvedValue('signed-token'),
+      getUrl: jest.fn().mockReturnValue('ws://localhost:7880'),
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -104,7 +108,12 @@ describe('RoomsService', () => {
         data: expect.objectContaining({ name: 'Standup', hostId: 'host-1' }),
       });
       expect(prisma.participant.create).toHaveBeenCalledWith({
-        data: { roomId: room.id, userId: 'host-1', role: 'host' },
+        data: {
+          roomId: room.id,
+          userId: 'host-1',
+          role: 'host',
+          admittedAt: expect.any(Date),
+        },
       });
       expect(result).toBe(room);
     });
@@ -229,13 +238,93 @@ describe('RoomsService', () => {
       );
     });
 
+    it('returns "waiting" for a newly-joining non-host, without issuing a LiveKit token', async () => {
+      prisma.room.findUnique.mockResolvedValue(
+        makeRoom({ status: 'active', maxParticipants: 10 }),
+      );
+      prisma.participant.count.mockResolvedValue(0);
+      prisma.participant.findUnique.mockResolvedValue(null);
+      prisma.participant.upsert.mockResolvedValue({
+        id: 'p-3',
+        userId: 'user-3',
+        role: 'participant',
+        admittedAt: null,
+        user: { name: 'User Three' },
+      });
+
+      const result = await service.joinRoom('room-1', 'user-3');
+
+      expect(result).toEqual({
+        status: 'waiting',
+        participant: expect.objectContaining({ id: 'p-3' }),
+      });
+      expect(liveKit.createAccessToken).not.toHaveBeenCalled();
+    });
+
+    it('returns "admitted" with a LiveKit token for a participant whose admittedAt is already set', async () => {
+      prisma.room.findUnique.mockResolvedValue(
+        makeRoom({ status: 'active', maxParticipants: 10 }),
+      );
+      prisma.participant.count.mockResolvedValue(1);
+      const admittedAt = new Date();
+      prisma.participant.findUnique.mockResolvedValue({ id: 'p-3' });
+      prisma.participant.upsert.mockResolvedValue({
+        id: 'p-3',
+        userId: 'user-3',
+        role: 'participant',
+        admittedAt,
+        user: { name: 'User Three' },
+      });
+
+      const result = await service.joinRoom('room-1', 'user-3');
+
+      expect(result).toEqual({
+        status: 'admitted',
+        participant: expect.objectContaining({ id: 'p-3' }),
+        liveKitUrl: 'ws://localhost:7880',
+        liveKitToken: 'signed-token',
+      });
+      expect(liveKit.createAccessToken).toHaveBeenCalledWith({
+        identity: 'user-3',
+        name: 'User Three',
+        roomId: 'room-1',
+        role: 'participant',
+      });
+    });
+
+    it('never touches admittedAt on the update branch — a reconnect keeps existing admission state', async () => {
+      prisma.room.findUnique.mockResolvedValue(
+        makeRoom({ status: 'active', maxParticipants: 10 }),
+      );
+      prisma.participant.count.mockResolvedValue(1);
+      prisma.participant.findUnique.mockResolvedValue({ id: 'p-3' }); // already a member
+      prisma.participant.upsert.mockResolvedValue({
+        id: 'p-3',
+        userId: 'user-3',
+        role: 'participant',
+        admittedAt: null,
+        user: { name: 'User Three' },
+      });
+
+      await service.joinRoom('room-1', 'user-3');
+
+      expect(prisma.participant.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          update: { leftAt: null, joinedAt: expect.any(Date) },
+        }),
+      );
+    });
+
     it('transitions a scheduled room to active on the first join', async () => {
       prisma.room.findUnique.mockResolvedValue(
         makeRoom({ status: 'scheduled', maxParticipants: 10 }),
       );
       prisma.participant.count.mockResolvedValue(0);
       prisma.participant.findUnique.mockResolvedValue(null);
-      prisma.participant.upsert.mockResolvedValue({ id: 'p-3' });
+      prisma.participant.upsert.mockResolvedValue({
+        id: 'p-3',
+        admittedAt: null,
+      });
       prisma.room.update.mockResolvedValue({});
 
       await service.joinRoom('room-1', 'user-3');
@@ -243,6 +332,175 @@ describe('RoomsService', () => {
       expect(prisma.room.update).toHaveBeenCalledWith({
         where: { id: 'room-1' },
         data: { status: 'active' },
+      });
+    });
+  });
+
+  describe('getParticipantStatus', () => {
+    it('throws NotFoundException when the caller has no participant record for this room', async () => {
+      prisma.participant.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.getParticipantStatus('room-1', 'user-2'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('returns "denied" once the participant has been denied (leftAt set, never admitted)', async () => {
+      prisma.participant.findUnique.mockResolvedValue({
+        id: 'p-2',
+        leftAt: new Date(),
+        admittedAt: null,
+      });
+
+      const result = await service.getParticipantStatus('room-1', 'user-2');
+
+      expect(result).toEqual({ status: 'denied' });
+      expect(liveKit.createAccessToken).not.toHaveBeenCalled();
+    });
+
+    it('returns "waiting" while still sitting in the waiting room', async () => {
+      prisma.participant.findUnique.mockResolvedValue({
+        id: 'p-2',
+        leftAt: null,
+        admittedAt: null,
+        userId: 'user-2',
+        role: 'participant',
+        user: { name: 'User Two' },
+      });
+
+      const result = await service.getParticipantStatus('room-1', 'user-2');
+
+      expect(result).toEqual({
+        status: 'waiting',
+        participant: expect.objectContaining({ id: 'p-2' }),
+      });
+    });
+
+    it('returns "admitted" with a fresh LiveKit token once the host has admitted them', async () => {
+      prisma.participant.findUnique.mockResolvedValue({
+        id: 'p-2',
+        leftAt: null,
+        admittedAt: new Date(),
+        userId: 'user-2',
+        role: 'participant',
+        user: { name: 'User Two' },
+      });
+
+      const result = await service.getParticipantStatus('room-1', 'user-2');
+
+      expect(result).toEqual({
+        status: 'admitted',
+        participant: expect.objectContaining({ id: 'p-2' }),
+        liveKitUrl: 'ws://localhost:7880',
+        liveKitToken: 'signed-token',
+      });
+    });
+  });
+
+  describe('listWaitingParticipants', () => {
+    it('queries only currently-waiting participants (leftAt null, admittedAt null)', async () => {
+      prisma.participant.findMany.mockResolvedValue([]);
+
+      await service.listWaitingParticipants('room-1');
+
+      expect(prisma.participant.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { roomId: 'room-1', leftAt: null, admittedAt: null },
+        }),
+      );
+    });
+  });
+
+  describe('admitParticipant', () => {
+    it('refuses a host admitting themselves', async () => {
+      await expect(
+        service.admitParticipant('room-1', 'host-1', 'host-1'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.participant.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses to admit someone with no participant record', async () => {
+      prisma.participant.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.admitParticipant('room-1', 'host-1', 'stranger'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('refuses to admit someone who already left (was denied, or left before being admitted)', async () => {
+      prisma.participant.findUnique.mockResolvedValue({
+        id: 'p-2',
+        leftAt: new Date(),
+        admittedAt: null,
+      });
+
+      await expect(
+        service.admitParticipant('room-1', 'host-1', 'user-2'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('refuses to admit someone who is already admitted', async () => {
+      prisma.participant.findUnique.mockResolvedValue({
+        id: 'p-2',
+        leftAt: null,
+        admittedAt: new Date(),
+      });
+
+      await expect(
+        service.admitParticipant('room-1', 'host-1', 'user-2'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('sets admittedAt for a genuinely-waiting participant', async () => {
+      prisma.participant.findUnique.mockResolvedValue({
+        id: 'p-2',
+        leftAt: null,
+        admittedAt: null,
+      });
+      prisma.participant.update.mockResolvedValue({});
+
+      await service.admitParticipant('room-1', 'host-1', 'user-2');
+
+      expect(prisma.participant.update).toHaveBeenCalledWith({
+        where: { id: 'p-2' },
+        data: { admittedAt: expect.any(Date) },
+      });
+    });
+  });
+
+  describe('denyParticipant', () => {
+    it('refuses a host denying themselves', async () => {
+      await expect(
+        service.denyParticipant('room-1', 'host-1', 'host-1'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.participant.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses to deny someone who is already admitted (not currently waiting)', async () => {
+      prisma.participant.findUnique.mockResolvedValue({
+        id: 'p-2',
+        leftAt: null,
+        admittedAt: new Date(),
+      });
+
+      await expect(
+        service.denyParticipant('room-1', 'host-1', 'user-2'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('sets leftAt (not a delete) for a waiting participant, so they can knock again later', async () => {
+      prisma.participant.findUnique.mockResolvedValue({
+        id: 'p-2',
+        leftAt: null,
+        admittedAt: null,
+      });
+      prisma.participant.update.mockResolvedValue({});
+
+      await service.denyParticipant('room-1', 'host-1', 'user-2');
+
+      expect(prisma.participant.update).toHaveBeenCalledWith({
+        where: { id: 'p-2' },
+        data: { leftAt: expect.any(Date) },
       });
     });
   });

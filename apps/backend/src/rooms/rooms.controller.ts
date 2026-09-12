@@ -18,15 +18,11 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RoomHostGuard } from './guards/room-host.guard';
 import { RoomMemberGuard } from './guards/room-member.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { LiveKitService } from '../livekit/livekit.service';
 
 @UseGuards(JwtAuthGuard)
 @Controller('rooms')
 export class RoomsController {
-  constructor(
-    private readonly rooms: RoomsService,
-    private readonly liveKit: LiveKitService,
-  ) {}
+  constructor(private readonly rooms: RoomsService) {}
 
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post()
@@ -69,21 +65,54 @@ export class RoomsController {
     return this.rooms.endRoom(id);
   }
 
-  // Returns both the DB participant record AND a LiveKit access token —
-  // joining a room in our data model and actually being able to connect
-  // to the live call are two different things; the client needs both to
-  // do anything useful.
+  // A host is admitted immediately; anyone else lands in the waiting room
+  // (status: 'waiting') until the host admits or denies them — see
+  // RoomsService.joinRoom/buildJoinResult for why a LiveKit token is only
+  // ever issued once admittedAt is actually set in the database, never
+  // just because the caller says they're the host.
   @Post(':id/join')
-  async join(@Param('id') id: string, @CurrentUser() user: { userId: string }) {
-    const participant = await this.rooms.joinRoom(id, user.userId);
-    const liveKitToken = await this.liveKit.createAccessToken({
-      identity: user.userId,
-      name: participant.user.name,
-      roomId: id,
-      role: participant.role,
-    });
+  join(@Param('id') id: string, @CurrentUser() user: { userId: string }) {
+    return this.rooms.joinRoom(id, user.userId);
+  }
 
-    return { participant, liveKitUrl: this.liveKit.getUrl(), liveKitToken };
+  // Polled by a waiting participant to find out once the host has acted.
+  // No RoomMemberGuard here deliberately — see the service method's own
+  // comment for why its DB-level check is scoped differently.
+  @Get(':id/join-status')
+  getJoinStatus(
+    @Param('id') id: string,
+    @CurrentUser() user: { userId: string },
+  ) {
+    return this.rooms.getParticipantStatus(id, user.userId);
+  }
+
+  // Host-only: who's currently waiting to be let in.
+  @UseGuards(RoomHostGuard)
+  @Get(':id/waiting')
+  listWaiting(@Param('id') id: string) {
+    return this.rooms.listWaitingParticipants(id);
+  }
+
+  @UseGuards(RoomHostGuard)
+  @Post(':id/waiting/:userId/admit')
+  @HttpCode(HttpStatus.OK)
+  admitParticipant(
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+    @CurrentUser() user: { userId: string },
+  ) {
+    return this.rooms.admitParticipant(id, user.userId, userId);
+  }
+
+  @UseGuards(RoomHostGuard)
+  @Post(':id/waiting/:userId/deny')
+  @HttpCode(HttpStatus.OK)
+  denyParticipant(
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+    @CurrentUser() user: { userId: string },
+  ) {
+    return this.rooms.denyParticipant(id, user.userId, userId);
   }
 
   @UseGuards(RoomMemberGuard)

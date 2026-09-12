@@ -5,11 +5,29 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { RoomStatus } from '@prisma/client';
+import { Prisma, RoomStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { LiveKitService } from '../livekit/livekit.service';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
+
+type ParticipantWithUser = Prisma.ParticipantGetPayload<{
+  include: { user: { select: { name: true } } };
+}>;
+
+// A discriminated union so callers (and the frontend, via the identical
+// shape returned over HTTP) can't accidentally read liveKitToken off a
+// still-waiting participant — TypeScript only allows it once status has
+// been narrowed to 'admitted'.
+type JoinResult =
+  | { status: 'waiting'; participant: ParticipantWithUser }
+  | {
+      status: 'admitted';
+      participant: ParticipantWithUser;
+      liveKitUrl: string;
+      liveKitToken: string;
+    }
+  | { status: 'denied' };
 
 @Injectable()
 export class RoomsService {
@@ -32,8 +50,15 @@ export class RoomsService {
         },
       });
 
+      // The host is always admitted immediately — they can't be excluded
+      // from their own meeting's waiting room.
       await tx.participant.create({
-        data: { roomId: room.id, userId: hostId, role: 'host' },
+        data: {
+          roomId: room.id,
+          userId: hostId,
+          role: 'host',
+          admittedAt: new Date(),
+        },
       });
 
       return room;
@@ -110,7 +135,7 @@ export class RoomsService {
     ]);
   }
 
-  async joinRoom(roomId: string, userId: string) {
+  async joinRoom(roomId: string, userId: string): Promise<JoinResult> {
     const room = await this.getRoomById(roomId);
     if (room.status === RoomStatus.ended) {
       throw new ConflictException('This meeting has already ended');
@@ -136,6 +161,13 @@ export class RoomsService {
     // "participant" for a new join. The one and only "host" row is created
     // in createRoom and is never reassigned here, preventing any joining
     // user from escalating themselves to host.
+    //
+    // admittedAt is deliberately untouched on the update branch: a
+    // returning participant (page refresh, flaky connection) keeps
+    // whatever admission state they already had rather than being forced
+    // back into the waiting room on every reconnect. It's only ever set on
+    // first creation (never, for a regular participant) or later by an
+    // explicit host admit action.
     const participant = await this.prisma.participant.upsert({
       where: { roomId_userId: { roomId, userId } },
       update: { leftAt: null, joinedAt: new Date() },
@@ -150,7 +182,133 @@ export class RoomsService {
       });
     }
 
+    return this.buildJoinResult(roomId, participant);
+  }
+
+  // Polled by a waiting participant's client to find out when the host has
+  // acted. Deliberately NOT guarded by RoomMemberGuard (isMember requires
+  // leftAt === null, which a denied participant no longer satisfies) —
+  // this method does its own DB-level ownership check instead, scoped to
+  // "does the CALLER (never a client-supplied id) have any participant
+  // record for this room at all", which is exactly what the polling
+  // endpoint's own authorization model needs.
+  async getParticipantStatus(
+    roomId: string,
+    userId: string,
+  ): Promise<JoinResult> {
+    const participant = await this.prisma.participant.findUnique({
+      where: { roomId_userId: { roomId, userId } },
+      include: { user: { select: { name: true } } },
+    });
+
+    if (!participant) {
+      throw new NotFoundException('You have not requested to join this room');
+    }
+
+    if (participant.leftAt) {
+      return { status: 'denied' };
+    }
+
+    return this.buildJoinResult(roomId, participant);
+  }
+
+  private async buildJoinResult(
+    roomId: string,
+    participant: ParticipantWithUser,
+  ): Promise<JoinResult> {
+    if (!participant.admittedAt) {
+      return { status: 'waiting', participant };
+    }
+
+    const liveKitToken = await this.liveKit.createAccessToken({
+      identity: participant.userId,
+      name: participant.user.name,
+      roomId,
+      role: participant.role,
+    });
+
+    return {
+      status: 'admitted',
+      participant,
+      liveKitUrl: this.liveKit.getUrl(),
+      liveKitToken,
+    };
+  }
+
+  // Hosts see who's currently waiting so they can admit or deny them —
+  // scoped to leftAt: null so a denied-then-reconsidered participant who
+  // hasn't re-knocked doesn't linger in the list.
+  listWaitingParticipants(roomId: string) {
+    return this.prisma.participant.findMany({
+      where: { roomId, leftAt: null, admittedAt: null },
+      include: { user: { select: { id: true, name: true } } },
+      orderBy: { joinedAt: 'asc' },
+    });
+  }
+
+  // Same BOLA-mitigation shape as assertActiveNonSelfParticipant below,
+  // scoped to the waiting-room state instead of the live-call state — a
+  // host can only admit/deny someone who is genuinely, currently waiting
+  // on THIS room, verified at the DB level rather than trusted from the
+  // request.
+  private async assertWaitingNonSelfParticipant(
+    roomId: string,
+    hostId: string,
+    targetUserId: string,
+  ) {
+    if (targetUserId === hostId) {
+      throw new BadRequestException(
+        'You cannot target yourself with a host action',
+      );
+    }
+
+    const participant = await this.prisma.participant.findUnique({
+      where: { roomId_userId: { roomId, userId: targetUserId } },
+    });
+
+    if (!participant || participant.leftAt || participant.admittedAt) {
+      throw new NotFoundException(
+        'This user is not currently waiting to join this room',
+      );
+    }
+
     return participant;
+  }
+
+  async admitParticipant(
+    roomId: string,
+    hostId: string,
+    targetUserId: string,
+  ): Promise<void> {
+    const participant = await this.assertWaitingNonSelfParticipant(
+      roomId,
+      hostId,
+      targetUserId,
+    );
+    await this.prisma.participant.update({
+      where: { id: participant.id },
+      data: { admittedAt: new Date() },
+    });
+  }
+
+  async denyParticipant(
+    roomId: string,
+    hostId: string,
+    targetUserId: string,
+  ): Promise<void> {
+    const participant = await this.assertWaitingNonSelfParticipant(
+      roomId,
+      hostId,
+      targetUserId,
+    );
+    // Same "not currently active" signal the rest of the codebase already
+    // uses (leftAt), rather than deleting the row — keeps a denied
+    // request's history and lets them knock again later via a plain
+    // joinRoom() call, which clears leftAt.
+    await this.prisma.participant.update({
+      where: { id: participant.id },
+      data: { leftAt: new Date() },
+    });
   }
 
   async leaveRoom(roomId: string, userId: string) {
