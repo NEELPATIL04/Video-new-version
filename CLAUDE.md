@@ -6,7 +6,7 @@ Read this before doing any work in this repo. Full detail lives in the docs belo
 
 - [TECH_STACK.md](./TECH_STACK.md) — frozen stack: Next.js/React Native frontend, NestJS backend, LiveKit (Go) for media, Postgres + Redis, Clerk/Auth0 auth
 - [WEBRTC_LIVEKIT.md](./WEBRTC_LIVEKIT.md) — LiveKit deployment, tokens/grants, codecs, recording, TURN
-- [FEATURES.md](./FEATURES.md) — scoped feature tiers v1 (MVP) → v4 (AI-driven). Build strictly in tier order.
+- [FEATURES.md](./FEATURES.md) — scoped feature tiers v1 (MVP) → v4 (AI-driven), plus a Tier 5 deferred backlog for items that need their own dedicated design/decision time (SSO, recurring meetings, recording, real calendar sync, notifications, mobile). Build strictly in tier order.
 - [DEV_STANDARDS.md](./DEV_STANDARDS.md) — design principles, patterns, naming, API versioning, security checklist, packages
 
 ## Non-negotiable rules
@@ -46,6 +46,8 @@ Scheduled meetings and join-by-code are both done: `CreateRoomForm` has a "Sched
 
 **To run locally:** Postgres running with `DATABASE_URL` in `apps/backend/.env`; `docker compose -f infra/livekit/docker-compose.yml up -d` for LiveKit; `pnpm --filter backend run start:dev`; `pnpm --filter web run dev`. E2E: `pnpm --filter web exec playwright test` (needs backend + LiveKit + Postgres running; leave ~60s between runs — `/auth/register` and `/auth/refresh` are both throttled and the suite runs close to those limits).
 
-**Not yet built:** recording/Egress, recurring meetings, real calendar OAuth sync (Google Calendar API / Microsoft Graph — see FEATURES.md), email/push notifications & reminders (infra deferred, see above), SSO, screen-share-specific controls beyond the SDK default, mobile. Also flagged but not yet actioned: annotation/whiteboard (Tier 2, in-app only — see FEATURES.md Research notes for why cross-tab/cross-app annotation isn't a web-app feature at all).
+**Tier 1 is now complete** — the remaining originally-v1 items (recording/Egress, recurring meetings, real calendar OAuth sync, email/push notifications & reminders, SSO, mobile) each needed their own dedicated design/decision time rather than being a natural extension of existing code, so they've been moved to FEATURES.md's **Tier 5 — Deferred** section. Per the tier-order rule, Tier 2 work may now begin.
+
+**Not yet built (Tier 5, deferred):** recording/Egress, recurring meetings, real calendar OAuth sync (Google Calendar API / Microsoft Graph — see FEATURES.md), email/push notifications & reminders (blocked on an email provider decision), SSO, mobile. Also not yet built: screen-share-specific controls beyond the SDK default. Flagged but not actioned: annotation/whiteboard (Tier 2, in-app only — see FEATURES.md Research notes for why cross-tab/cross-app annotation isn't a web-app feature at all).
 
 Git workflow in use: feature branches off `dev` (e.g. `feature/auth`, `feature/rooms`, `feature/livekit`), merged back into `dev`, pushed to `origin`. `master`/`main` is never touched or pushed.

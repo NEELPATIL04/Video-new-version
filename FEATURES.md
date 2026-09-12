@@ -10,29 +10,30 @@
 
 ## Tier 1 — v1 / MVP (core, must-have — "a working video call app")
 
-| Feature                                         | Tag |
-| ----------------------------------------------- | --- |
-| User accounts: sign up/login                    | v1  |
-| Google/Microsoft SSO                            | v1  |
-| Create meeting: instant                         | v1  |
-| Create meeting: scheduled                       | v1  |
-| Create meeting: recurring                       | v1  |
-| Join via link or meeting code                   | v1  |
-| 1:1 video/audio calling                         | v1  |
-| Group video/audio calling                       | v1  |
-| Mute/unmute audio                               | v1  |
-| Camera on/off                                   | v1  |
-| Screen sharing                                  | v1  |
-| In-call text chat                               | v1  |
-| Participant list                                | v1  |
-| Host controls: mute participant                 | v1  |
-| Host controls: remove participant               | v1  |
-| Waiting room / lobby (host admits)              | v1  |
-| Cloud recording (start/stop, playback)          | v1  |
-| Calendar integration (Google Calendar, Outlook) | v1  |
-| Email/push notifications & reminders            | v1  |
-| Web app                                         | v1  |
-| Mobile app (iOS/Android)                        | v1  |
+| Feature                            | Tag |
+| ---------------------------------- | --- |
+| User accounts: sign up/login       | v1  |
+| Create meeting: instant            | v1  |
+| Create meeting: scheduled          | v1  |
+| Join via link or meeting code      | v1  |
+| 1:1 video/audio calling            | v1  |
+| Group video/audio calling          | v1  |
+| Mute/unmute audio                  | v1  |
+| Camera on/off                      | v1  |
+| Screen sharing                     | v1  |
+| In-call text chat                  | v1  |
+| Participant list                   | v1  |
+| Host controls: mute participant    | v1  |
+| Host controls: remove participant  | v1  |
+| Waiting room / lobby (host admits) | v1  |
+| Web app                            | v1  |
+
+Everything above is done. The remaining items originally scoped for v1 (SSO, recurring
+meetings, cloud recording, real calendar sync, email/push notifications, mobile) each
+turned out to need their own dedicated design/decision time — a new data model, a
+third-party account, or a whole separate codebase — rather than being a natural extension
+of what's already built. Moved to **Tier 5 — Deferred** below so Tier 1 can be considered
+shipped and stable, per the tier-order rule.
 
 ---
 
@@ -105,6 +106,26 @@
 | Searchable meeting history (semantic search across transcripts)           | v4  |
 | Auto-generated agenda from calendar invite content                        | v4  |
 | Engagement/sentiment signals for hosts (talk-time balance, disengagement) | v4  |
+
+---
+
+## Tier 5 — Deferred (each needs dedicated design/decision time before scheduling)
+
+Not lower priority in the sense of "nice to have" — several of these are genuinely
+important (SSO, recording, notifications). What they share is that none of them are a
+natural extension of code that already exists: each needs a real decision (which OAuth
+providers, which storage backend, which email provider) or a new data model before a
+single line gets written. Moved here so Tier 1 isn't blocked waiting on decisions that
+are the user's to make, not something to default into.
+
+| Feature                                | Originally | Why it's separate                                                                                                                                                                                                                                       |
+| -------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cloud recording (start/stop, playback) | v1         | Needs LiveKit Egress + a real storage backend (S3 or similar) — an infra decision, not a code gap                                                                                                                                                       |
+| Create meeting: recurring              | v1         | Needs a new `MeetingSeries` model, an RRULE-based recurrence engine, and single-vs-series edit/cancel semantics — a genuinely new data model, not a field added to scheduling                                                                           |
+| Google/Microsoft SSO                   | v1         | OAuth provider integration alongside (not replacing) the custom auth system — its own consent flows and provider-specific quirks per provider                                                                                                           |
+| Calendar integration (real OAuth sync) | v1         | The lightweight add-to-calendar links shipped instead (Tier 1, done). Full Google Calendar API / Microsoft Graph sync needs separate OAuth app registrations per provider and, at scale, Google's own security verification review — see Research notes |
+| Email/push notifications & reminders   | v1         | Blocked on an email provider decision (managed like Resend/SES vs. self-hosted Postal, which needs a domain with DNS control) — deliberately not built against a stub                                                                                   |
+| Mobile app (iOS/Android)               | v1         | A separate React Native codebase (per TECH_STACK.md), not an extension of the web app                                                                                                                                                                   |
 
 ---
 
