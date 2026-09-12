@@ -41,8 +41,8 @@ shipped and stable, per the tier-order rule.
 
 | Feature                                                                                                          | Tag |
 | ---------------------------------------------------------------------------------------------------------------- | --- |
-| Virtual backgrounds                                                                                              | v2  |
-| Background blur                                                                                                  | v2  |
+| Virtual backgrounds — **done**, via `@livekit/track-processors` (MediaPipe segmentation, client-side only)       | v2  |
+| Background blur — **done**, same feature/implementation as virtual backgrounds above                             | v2  |
 | Noise cancellation                                                                                               | v2  |
 | Breakout rooms                                                                                                   | v2  |
 | Reactions/emojis                                                                                                 | v2  |
