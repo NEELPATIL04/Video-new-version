@@ -36,6 +36,7 @@ describe('RoomsService', () => {
     removeParticipant: jest.Mock;
     createAccessToken: jest.Mock;
     getUrl: jest.Mock;
+    setHandRaised: jest.Mock;
   };
 
   const makeRoom = (overrides: Record<string, unknown> = {}) => ({
@@ -83,6 +84,7 @@ describe('RoomsService', () => {
       removeParticipant: jest.fn(),
       createAccessToken: jest.fn().mockResolvedValue('signed-token'),
       getUrl: jest.fn().mockReturnValue('ws://localhost:7880'),
+      setHandRaised: jest.fn(),
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -764,6 +766,52 @@ describe('RoomsService', () => {
         where: { id: 'p-2' },
         data: { leftAt: expect.any(Date) },
       });
+    });
+  });
+
+  describe('lowerParticipantHand', () => {
+    it('refuses a host lowering their own hand via the host-action path', async () => {
+      await expect(
+        service.lowerParticipantHand('room-1', 'host-1', 'host-1'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(liveKit.setHandRaised).not.toHaveBeenCalled();
+    });
+
+    it('refuses to target someone who is not an active participant of this room', async () => {
+      prisma.participant.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.lowerParticipantHand('room-1', 'host-1', 'stranger'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(liveKit.setHandRaised).not.toHaveBeenCalled();
+    });
+
+    it('refuses to target a participant who already left', async () => {
+      prisma.participant.findUnique.mockResolvedValue({
+        id: 'p-2',
+        leftAt: new Date(),
+      });
+
+      await expect(
+        service.lowerParticipantHand('room-1', 'host-1', 'user-2'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(liveKit.setHandRaised).not.toHaveBeenCalled();
+    });
+
+    it("lowers an active participant's hand via LiveKit and touches no DB state", async () => {
+      prisma.participant.findUnique.mockResolvedValue({
+        id: 'p-2',
+        leftAt: null,
+      });
+
+      await service.lowerParticipantHand('room-1', 'host-1', 'user-2');
+
+      expect(liveKit.setHandRaised).toHaveBeenCalledWith(
+        'room-1',
+        'user-2',
+        false,
+      );
+      expect(prisma.participant.update).not.toHaveBeenCalled();
     });
   });
 });

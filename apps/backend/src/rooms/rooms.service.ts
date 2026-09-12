@@ -457,4 +457,22 @@ export class RoomsService {
       data: { leftAt: new Date() },
     });
   }
+
+  // Host-only "lower someone else's hand" (queue management) — NOT the
+  // path a participant uses to lower their own hand (that's a direct
+  // client-side localParticipant.setMetadata() call, see
+  // RaiseHandControl.tsx). Same BOLA-mitigation shape as
+  // muteParticipant/removeParticipant: the target must be verified, at
+  // the DB level, as a real active participant of THIS room before
+  // LiveKit is touched at all, and a host can't target themselves. No DB
+  // write here — raised-hand state lives entirely in LiveKit participant
+  // metadata, not in Postgres (see FEATURES.md's Research notes for why).
+  async lowerParticipantHand(
+    roomId: string,
+    hostId: string,
+    targetUserId: string,
+  ): Promise<void> {
+    await this.assertActiveNonSelfParticipant(roomId, hostId, targetUserId);
+    await this.liveKit.setHandRaised(roomId, targetUserId, false);
+  }
 }

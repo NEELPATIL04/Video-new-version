@@ -168,4 +168,20 @@ export class RoomsController {
   ) {
     return this.rooms.removeParticipant(id, user.userId, userId);
   }
+
+  // Host lowering ANOTHER participant's hand (queue management). A
+  // participant lowering their OWN hand never calls this — that happens
+  // directly client-side via localParticipant.setMetadata(), which
+  // LiveKit restricts to the caller's own identity. Same RoomHostGuard +
+  // DB-level non-self-target check as mute/remove above.
+  @UseGuards(RoomHostGuard)
+  @Post(':id/participants/:userId/lower-hand')
+  @HttpCode(HttpStatus.OK)
+  lowerParticipantHand(
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+    @CurrentUser() user: { userId: string },
+  ) {
+    return this.rooms.lowerParticipantHand(id, user.userId, userId);
+  }
 }

@@ -114,3 +114,16 @@ export function removeParticipant(roomId: string, targetUserId: string, accessTo
     accessToken,
   });
 }
+
+// Host-only — lowers ANOTHER participant's raised hand (queue
+// management). A participant lowering their OWN hand never calls this;
+// that goes straight through LiveKit's client SDK
+// (localParticipant.setMetadata()) instead. Same BOLA note as
+// mute/remove: the backend re-verifies at the DB level, so this is safe
+// to expose to any signed-in user.
+export function lowerParticipantHand(roomId: string, targetUserId: string, accessToken: string) {
+  return apiFetch<void>(`/rooms/${roomId}/participants/${targetUserId}/lower-hand`, {
+    method: "POST",
+    accessToken,
+  });
+}
