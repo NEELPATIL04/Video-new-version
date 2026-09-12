@@ -141,8 +141,13 @@ export class RoomsService {
       throw new ConflictException('This meeting has already ended');
     }
 
-    const activeCount = await this.prisma.participant.count({
-      where: { roomId, leftAt: null },
+    // Capacity is checked against ADMITTED participants only — someone
+    // sitting in the waiting room hasn't taken a seat in the call yet, so
+    // a full waiting room must never block new arrivals from queuing up
+    // behind them. That's the entire point of a lobby: it lets people
+    // wait beyond live capacity, admitted one at a time as space frees up.
+    const admittedCount = await this.prisma.participant.count({
+      where: { roomId, leftAt: null, admittedAt: { not: null } },
     });
 
     // Someone already occupying a seat and rejoining (rare race: they
@@ -153,7 +158,7 @@ export class RoomsService {
       where: { roomId_userId: { roomId, userId } },
     });
 
-    if (!existing && activeCount >= room.maxParticipants) {
+    if (!existing && admittedCount >= room.maxParticipants) {
       throw new ForbiddenException('This meeting is full');
     }
 

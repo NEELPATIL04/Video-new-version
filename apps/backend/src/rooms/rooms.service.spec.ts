@@ -204,6 +204,30 @@ describe('RoomsService', () => {
       );
     });
 
+    it('checks capacity against ADMITTED participants only — a full waiting room must never block new arrivals', async () => {
+      // The whole point of a lobby is letting people queue up beyond live
+      // capacity — if a waiting room could itself fill "the room", it
+      // would defeat its own purpose the moment two people are waiting.
+      prisma.room.findUnique.mockResolvedValue(
+        makeRoom({ status: 'active', maxParticipants: 2 }),
+      );
+      prisma.participant.count.mockResolvedValue(0); // 0 currently admitted
+      prisma.participant.findUnique.mockResolvedValue(null);
+      prisma.participant.upsert.mockResolvedValue({
+        id: 'p-3',
+        userId: 'user-3',
+        role: 'participant',
+        admittedAt: null,
+        user: { name: 'User Three' },
+      });
+
+      await service.joinRoom('room-1', 'user-3');
+
+      expect(prisma.participant.count).toHaveBeenCalledWith({
+        where: { roomId: 'room-1', leftAt: null, admittedAt: { not: null } },
+      });
+    });
+
     it('lets an existing member rejoin even when the room is at capacity', async () => {
       prisma.room.findUnique.mockResolvedValue(
         makeRoom({ status: 'active', maxParticipants: 2 }),
