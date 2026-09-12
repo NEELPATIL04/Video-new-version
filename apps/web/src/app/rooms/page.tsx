@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/features/auth/store";
 import { CreateRoomForm } from "@/features/rooms/components/CreateRoomForm";
+import { JoinByCodeForm } from "@/features/rooms/components/JoinByCodeForm";
 import { RoomList } from "@/features/rooms/components/RoomList";
 import { logout } from "@/features/auth/api";
 
@@ -43,6 +44,7 @@ export default function RoomsPage() {
         </div>
       </div>
       <CreateRoomForm />
+      <JoinByCodeForm />
       <RoomList />
     </main>
   );

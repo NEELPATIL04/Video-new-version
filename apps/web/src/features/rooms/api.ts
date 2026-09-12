@@ -9,6 +9,11 @@ export interface Room {
   hostId: string;
   createdAt: string;
   updatedAt: string;
+  // Short numeric alternative to the room ID/link (e.g. "482913657",
+  // shown to users grouped as "482 913 657"). Not a security boundary —
+  // the waiting room + auth are — just needs to be easy to read aloud
+  // and type back in.
+  joinCode: string;
 }
 
 export interface WaitingParticipant {
@@ -48,6 +53,13 @@ export function listMyRooms(accessToken: string) {
 
 export function getRoom(id: string, accessToken: string) {
   return apiFetch<Room>(`/rooms/${id}`, { accessToken });
+}
+
+// Accepts the code with or without the display-formatted spaces
+// ("482 913 657" or "482913657") — encodeURIComponent so a raw space
+// survives the request; the backend strips all non-digits anyway.
+export function getRoomByCode(code: string, accessToken: string) {
+  return apiFetch<Room>(`/rooms/by-code/${encodeURIComponent(code)}`, { accessToken });
 }
 
 export function joinRoom(id: string, accessToken: string) {
