@@ -1,6 +1,8 @@
 import { test, expect, type Page, type BrowserContext } from "@playwright/test";
 import { RoomServiceClient, TrackType } from "livekit-server-sdk";
 
+type StorageState = Awaited<ReturnType<BrowserContext["storageState"]>>;
+
 // Derived from the SDK's own return type rather than importing
 // @livekit/protocol directly — that package is only a transitive
 // dependency here (livekit-server-sdk depends on it), and this keeps the
@@ -8,7 +10,7 @@ import { RoomServiceClient, TrackType } from "livekit-server-sdk";
 type ParticipantInfo = Awaited<ReturnType<RoomServiceClient["listParticipants"]>>[number];
 type TrackInfo = ParticipantInfo["tracks"][number];
 
-// The real question this test answers: are two people who join the same
+// The real question this suite answers: are two people who join the same
 // room actually IN THE SAME LiveKit room together, not just two people who
 // each independently got a "success" response? Two isolated browser
 // contexts (separate cookie jars, like two real people on two real
@@ -16,20 +18,26 @@ type TrackInfo = ParticipantInfo["tracks"][number];
 // approach we tried manually first, which shares cookies for the same
 // origin and can't cleanly simulate two independent sessions.
 
+// Must match apps/web/.env's NEXT_PUBLIC_API_URL — playwright.config.ts
+// only starts the Next.js dev server, not the backend, so this talks to
+// it directly for registration and setup (see beforeAll below).
+const API_URL = "http://localhost:3001";
+
 function uniqueEmail(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 10_000)}@e2e-test.local`;
 }
 
-async function registerAndLandOnRooms(page: Page, name: string, email: string, password: string) {
-  await page.goto("/register");
-  await page.getByLabel("Name").fill(name);
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Create account" }).click();
-  await page.waitForURL(/\/rooms$/);
-}
-
-test.describe("call flow", () => {
+// Serial + a single shared join in beforeAll (not a fresh room per test):
+// a real host doesn't rejoin the call from scratch before every single
+// button they click, and re-registering/re-joining per test also meant
+// re-triggering the app's own silent-refresh flow (POST /auth/refresh) far
+// more than a normal user session would in a minute — which is exactly
+// what /auth/refresh's own brute-force throttle (10/min) exists to catch.
+// One join for the whole suite keeps the traffic pattern realistic and
+// lets the 4 checks run as the natural sequence of one live call: see who
+// joined, confirm a guest has no admin UI, mute them, then remove them
+// (removal ends B's connection, so it has to run last).
+test.describe.serial("call flow", () => {
   let contextA: BrowserContext;
   let contextB: BrowserContext;
   let pageA: Page;
@@ -39,14 +47,47 @@ test.describe("call flow", () => {
   const nameA = "E2E User A";
   const nameB = "E2E User B";
 
-  test.beforeEach(async ({ browser }) => {
-    contextA = await browser.newContext();
-    contextB = await browser.newContext();
+  test.beforeAll(async ({ browser, request }) => {
+    // `next dev` compiles each route on its first hit. Raw HTTP GETs (not
+    // page.goto) force that server-side compile without running any
+    // client-side JS — a real page load would fire useAuthInit's
+    // /auth/refresh call even while anonymous, burning refresh's own
+    // throttle budget for no reason during warm-up.
+    await request.get("/");
+    await request.get("/login");
+    await request.get("/rooms");
+
+    const registerViaApi = async (name: string, email: string): Promise<StorageState> => {
+      const context = await browser.newContext();
+      const res = await context.request.post(`${API_URL}/auth/register`, {
+        data: { name, email, password },
+      });
+      if (!res.ok()) {
+        throw new Error(`Setup failed: could not register ${email} (${res.status()} ${await res.text()})`);
+      }
+      const state = await context.storageState();
+      await context.close();
+      return state;
+    };
+
+    const [stateA, stateB] = await Promise.all([
+      registerViaApi(nameA, uniqueEmail("usera")),
+      registerViaApi(nameB, uniqueEmail("userb")),
+    ]);
+
+    contextA = await browser.newContext({ storageState: stateA });
+    contextB = await browser.newContext({ storageState: stateB });
     pageA = await contextA.newPage();
     pageB = await contextB.newPage();
 
-    await registerAndLandOnRooms(pageA, nameA, uniqueEmail("usera"), password);
-    await registerAndLandOnRooms(pageB, nameB, uniqueEmail("userb"), password);
+    // Both users are already authenticated via the httpOnly refresh
+    // cookie carried over in storageState — landing on /rooms triggers
+    // the same silent-refresh flow a real returning user hits on load.
+    // Generous timeout: this is the first REAL page load of the run, and
+    // next dev still has to compile the client bundle even though the
+    // warm-up above already compiled the server-rendered HTML for it.
+    await pageA.goto("/rooms");
+    await expect(pageA.getByRole("button", { name: "Start instant meeting" })).toBeVisible({ timeout: 20_000 });
 
     // User A (host) creates the room and joins it.
     await pageA.getByPlaceholder("Meeting name").fill("E2E Two User Call");
@@ -66,9 +107,13 @@ test.describe("call flow", () => {
     await expect(pageB.getByRole("button", { name: /Leave/i })).toBeVisible({ timeout: 15_000 });
   });
 
-  test.afterEach(async () => {
-    await contextA.close();
-    await contextB.close();
+  test.afterAll(async () => {
+    // beforeAll can throw before these are ever assigned (e.g. hitting
+    // /auth/register's throttle) — afterAll still runs in that case, and
+    // without the guard it throws its own confusing "undefined" error on
+    // top of the real one.
+    await contextA?.close();
+    await contextB?.close();
   });
 
   test("two independent users joining the same room both see each other as connected participants", async () => {
@@ -79,10 +124,21 @@ test.describe("call flow", () => {
     await expect(pageA.locator(".lk-participant-name")).toHaveCount(2, { timeout: 15_000 });
     await expect(pageB.locator(".lk-participant-name")).toHaveCount(2, { timeout: 15_000 });
 
-    await expect(pageA.getByText(nameA)).toBeVisible();
-    await expect(pageA.getByText(nameB)).toBeVisible();
-    await expect(pageB.getByText(nameA)).toBeVisible();
-    await expect(pageB.getByText(nameB)).toBeVisible();
+    // Scoped to the LiveKit-rendered name tag specifically — a bare
+    // getByText(nameB) also matches HostControls' own participant list on
+    // pageA (A is host), which shows the same name and makes the locator
+    // ambiguous (Playwright strict mode rejects it).
+    await expect(pageA.locator(".lk-participant-name", { hasText: nameA })).toBeVisible();
+    await expect(pageA.locator(".lk-participant-name", { hasText: nameB })).toBeVisible();
+    await expect(pageB.locator(".lk-participant-name", { hasText: nameA })).toBeVisible();
+    await expect(pageB.locator(".lk-participant-name", { hasText: nameB })).toBeVisible();
+  });
+
+  test("a non-host participant is never shown host controls", async () => {
+    // B is a regular participant, not the host — HostControls must not
+    // render for them at all, regardless of what the host sees. Runs
+    // before the mute/remove tests below since remove ends B's connection.
+    await expect(pageB.getByText("Host controls")).not.toBeVisible();
   });
 
   test("host can mute a participant's published audio track", async () => {
@@ -136,11 +192,5 @@ test.describe("call flow", () => {
     // the removal genuinely took effect server-side, not just that our
     // API returned 200.
     await expect(pageB).toHaveURL(/\/rooms$/, { timeout: 10_000 });
-  });
-
-  test("a non-host participant is never shown host controls", async () => {
-    // B is a regular participant, not the host — HostControls must not
-    // render for them at all, regardless of what the host sees.
-    await expect(pageB.getByText("Host controls")).not.toBeVisible();
   });
 });
