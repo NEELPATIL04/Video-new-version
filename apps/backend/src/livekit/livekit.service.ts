@@ -42,6 +42,15 @@ export class LiveKitService {
       canPublishData: params.role !== 'viewer',
       roomAdmin: params.role === 'host',
       roomRecord: params.role === 'host',
+      // Lets a participant call localParticipant.setMetadata() on
+      // themselves client-side (used for raise-hand — see
+      // RaiseHandControl.tsx and FEATURES.md's Research notes). LiveKit
+      // enforces the "own" part of this grant server-side: it only ever
+      // allows a participant to update THEIR OWN metadata, never another
+      // participant's, so this can't be used to forge someone else's
+      // state. Off by default in LiveKit, same viewer carve-out as
+      // canPublish/canPublishData above.
+      canUpdateOwnMetadata: params.role !== 'viewer',
     };
     token.addGrant(grant);
 
@@ -88,5 +97,29 @@ export class LiveKitService {
 
   async removeParticipant(roomId: string, identity: string): Promise<void> {
     await this.getRoomService().removeParticipant(roomId, identity);
+  }
+
+  // Only used for the HOST-lowers-ANOTHER-participant's-hand path.
+  // Raising/lowering your OWN hand goes straight from the browser via
+  // localParticipant.setMetadata() (see the canUpdateOwnMetadata grant
+  // above) — that call can only ever touch the caller's own metadata, so
+  // it has no way to reach another participant's state. This method is
+  // what lets a host act on someone else's, via the same server-to-server
+  // RoomServiceClient used for mute/remove above.
+  //
+  // Overwrites the participant's whole metadata string rather than
+  // merging fields — safe today because raised-hand is the only thing
+  // stored there. If a second field is ever added to participant
+  // metadata, this needs to read-modify-write instead.
+  async setHandRaised(
+    roomId: string,
+    identity: string,
+    raised: boolean,
+  ): Promise<void> {
+    await this.getRoomService().updateParticipant(
+      roomId,
+      identity,
+      JSON.stringify({ handRaised: raised }),
+    );
   }
 }

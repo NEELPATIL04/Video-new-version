@@ -93,6 +93,39 @@ describe('LiveKitService', () => {
     expect(claims.video?.roomAdmin).toBeFalsy();
   });
 
+  // Raise-hand relies on a participant being able to set THEIR OWN
+  // LiveKit metadata client-side (see RaiseHandControl.tsx) — LiveKit
+  // only allows this at all when canUpdateOwnMetadata is granted, and
+  // (per LiveKit's own semantics) it only ever lets a participant touch
+  // their own metadata, never someone else's, which is exactly why the
+  // self raise/lower path needs no backend round trip.
+  it('grants host and participant canUpdateOwnMetadata, but not a viewer', async () => {
+    const hostJwt = await service.createAccessToken({
+      identity: 'host-1',
+      name: 'Host',
+      roomId: 'room-1',
+      role: 'host',
+    });
+    const participantJwt = await service.createAccessToken({
+      identity: 'user-2',
+      name: 'Bob',
+      roomId: 'room-1',
+      role: 'participant',
+    });
+    const viewerJwt = await service.createAccessToken({
+      identity: 'user-3',
+      name: 'Carol',
+      roomId: 'room-1',
+      role: 'viewer',
+    });
+
+    expect((await decode(hostJwt)).video?.canUpdateOwnMetadata).toBe(true);
+    expect((await decode(participantJwt)).video?.canUpdateOwnMetadata).toBe(
+      true,
+    );
+    expect((await decode(viewerJwt)).video?.canUpdateOwnMetadata).toBeFalsy();
+  });
+
   it('never issues a valid token for a wrong secret (confirms real signing, not a stub)', async () => {
     const jwt = await service.createAccessToken({
       identity: 'user-1',
