@@ -1,9 +1,19 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { LiveKitRoom, VideoConference } from "@livekit/components-react";
 import { HostControls } from "./HostControls";
 import { WaitingRoomHostPanel } from "./WaitingRoomHostPanel";
+
+// @livekit/track-processors pulls in MediaPipe's WASM segmentation model
+// (~400KB+) and touches browser-only APIs (WebGL/insertable streams) at
+// import time — ssr:false keeps it out of the server render entirely and
+// out of the initial page bundle, loaded only once the call UI mounts.
+const BackgroundEffectsControl = dynamic(
+  () => import("./BackgroundEffectsControl").then((m) => m.BackgroundEffectsControl),
+  { ssr: false },
+);
 
 interface CallRoomProps {
   roomId: string;
@@ -53,6 +63,9 @@ export function CallRoom({ roomId, liveKitUrl, liveKitToken, isHost }: CallRoomP
           <WaitingRoomHostPanel roomId={roomId} />
         </>
       )}
+      {/* Every participant controls their own camera background, not
+          just the host. */}
+      <BackgroundEffectsControl />
     </LiveKitRoom>
   );
 }

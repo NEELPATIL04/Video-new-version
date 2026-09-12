@@ -286,6 +286,9 @@ importers:
       "@livekit/components-styles":
         specifier: ^1.2.0
         version: 1.2.0
+      "@livekit/track-processors":
+        specifier: 0.8.0
+        version: 0.8.0(@types/dom-mediacapture-transform@0.1.12)(livekit-client@2.22.3(@types/dom-mediacapture-record@1.0.22))
       "@tanstack/react-query":
         specifier: ^5.102.8
         version: 5.102.8(react@19.2.8)
@@ -1823,6 +1826,15 @@ packages:
         integrity: sha512-L1uggNQAqyY21smQY8AllyOYbcv9Me9TaxwuLytL1R8ck9nbYPmQLNwEDi3pOFGAMa5F8I2nUi2Jc59W5awxlA==,
       }
 
+  "@livekit/track-processors@0.8.0":
+    resolution:
+      {
+        integrity: sha512-P24RXYodZqcJ5lXYbOp0er1b7WUisHFd267i3cgleQQOGt2jHBqwgRo0V9koEIEAR8J45zSr6zK3IuLUOwwNfA==,
+      }
+    peerDependencies:
+      "@types/dom-mediacapture-transform": ^0.1.9
+      livekit-client: ^1.12.0 || ^2.1.0
+
   "@ljharb/through@2.3.14":
     resolution:
       {
@@ -1836,6 +1848,12 @@ packages:
         integrity: sha512-Z7C/xXCiGWsg0KuKsHTKJxbWhpI3Vs5GwLfOean7MGyVFGqdRgBbAjOCh6u4bbjPc/8MJ2pZmK/0DLdCbivLDA==,
       }
     engines: { node: ">=8" }
+
+  "@mediapipe/tasks-vision@0.10.14":
+    resolution:
+      {
+        integrity: sha512-vOifgZhkndgybdvoRITzRkIueWWSiCKuEUXXK6Q4FaJsFvRJuwgg++vqFUMlL0Uox62U5aEXFhHxlhV7Ja5e3Q==,
+      }
 
   "@napi-rs/wasm-runtime@1.2.3":
     resolution:
@@ -2513,6 +2531,18 @@ packages:
     resolution:
       {
         integrity: sha512-mUMZLK3NvwRLcAAT9qmcK+9p7tpU2FHdDsntR3YI4+GY88XrgG4XiE7u1Q2LAN2/FZOz/tdMDC3GQCR4T8nFuw==,
+      }
+
+  "@types/dom-mediacapture-transform@0.1.12":
+    resolution:
+      {
+        integrity: sha512-d7/QsLRwF864A5mgIM/YrfiglHoYn7zgCcAoJgW404r+2DwnNr7EBbLnCWpmOMgH8y0te73L1AV6H1bmauaWFw==,
+      }
+
+  "@types/dom-webcodecs@0.1.19":
+    resolution:
+      {
+        integrity: sha512-+yFUIDUaASFz0vQpWBErPxun/Lb+F0TdrlTsj50gm7K797YzEx2TmV6fEiwciHyFNghlZYPgQXH5qRcwMHcJFQ==,
       }
 
   "@types/eslint-scope@3.7.7":
@@ -9597,11 +9627,19 @@ snapshots:
     dependencies:
       "@bufbuild/protobuf": 1.10.1
 
+  "@livekit/track-processors@0.8.0(@types/dom-mediacapture-transform@0.1.12)(livekit-client@2.22.3(@types/dom-mediacapture-record@1.0.22))":
+    dependencies:
+      "@mediapipe/tasks-vision": 0.10.14
+      "@types/dom-mediacapture-transform": 0.1.12
+      livekit-client: 2.22.3(@types/dom-mediacapture-record@1.0.22)
+
   "@ljharb/through@2.3.14":
     dependencies:
       call-bind: 1.0.9
 
   "@lukeed/csprng@1.1.0": {}
+
+  "@mediapipe/tasks-vision@0.10.14": {}
 
   "@napi-rs/wasm-runtime@1.2.3(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)":
     dependencies:
@@ -10013,6 +10051,12 @@ snapshots:
   "@types/cookiejar@2.1.5": {}
 
   "@types/dom-mediacapture-record@1.0.22": {}
+
+  "@types/dom-mediacapture-transform@0.1.12":
+    dependencies:
+      "@types/dom-webcodecs": 0.1.19
+
+  "@types/dom-webcodecs@0.1.19": {}
 
   "@types/eslint-scope@3.7.7":
     dependencies:
