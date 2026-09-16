@@ -3,10 +3,39 @@ import { ConfigService } from '@nestjs/config';
 import {
   AccessToken,
   RoomServiceClient,
+  ServerError,
   TrackType,
   VideoGrant,
 } from 'livekit-server-sdk';
 import { RoomRole } from '@prisma/client';
+
+// Thrown when a RoomServiceClient call (mute/remove/updateParticipant)
+// targets a participant our own DB says is active but LiveKit's live room
+// no longer has — e.g. mid-reconnect after a dropped connection, or any
+// window where our Participant.leftAt hasn't caught up yet. Lets
+// RoomsService translate this into a clean, honest NotFoundException
+// instead of an unhandled 500 leaking LiveKit's raw Twirp error. See
+// isParticipantNotConnected below for why this is detected via the
+// Twirp response's HTTP status rather than its `code` field.
+export class LiveKitParticipantNotConnectedError extends Error {
+  constructor(roomId: string, identity: string) {
+    super(
+      `Participant "${identity}" is not currently connected to LiveKit room "${roomId}"`,
+    );
+    this.name = 'LiveKitParticipantNotConnectedError';
+  }
+}
+
+// LiveKit's Twirp server returns HTTP 404 for "participant does not
+// exist" (confirmed by observing a real response — response.statusText
+// was "Not Found" — while building the lower-hand feature), but its own
+// `code` field for this case is the unhelpfully generic "unknown", not
+// a distinguishable Twirp code. The HTTP status is the only reliable
+// signal here, so that's what this matches on rather than `code` or a
+// fragile substring match on `message`.
+function isParticipantNotConnected(error: unknown): boolean {
+  return error instanceof ServerError && error.status === 404;
+}
 
 @Injectable()
 export class LiveKitService {
@@ -82,21 +111,35 @@ export class LiveKitService {
   // already) rather than erroring, since that's not actually a failure.
   async muteParticipantAudio(roomId: string, identity: string): Promise<void> {
     const roomService = this.getRoomService();
-    const participant = await roomService.getParticipant(roomId, identity);
-    const audioTrack = participant.tracks.find(
-      (t) => t.type === TrackType.AUDIO,
-    );
-    if (!audioTrack) return;
-    await roomService.mutePublishedTrack(
-      roomId,
-      identity,
-      audioTrack.sid,
-      true,
-    );
+    try {
+      const participant = await roomService.getParticipant(roomId, identity);
+      const audioTrack = participant.tracks.find(
+        (t) => t.type === TrackType.AUDIO,
+      );
+      if (!audioTrack) return;
+      await roomService.mutePublishedTrack(
+        roomId,
+        identity,
+        audioTrack.sid,
+        true,
+      );
+    } catch (error) {
+      if (isParticipantNotConnected(error)) {
+        throw new LiveKitParticipantNotConnectedError(roomId, identity);
+      }
+      throw error;
+    }
   }
 
   async removeParticipant(roomId: string, identity: string): Promise<void> {
-    await this.getRoomService().removeParticipant(roomId, identity);
+    try {
+      await this.getRoomService().removeParticipant(roomId, identity);
+    } catch (error) {
+      if (isParticipantNotConnected(error)) {
+        throw new LiveKitParticipantNotConnectedError(roomId, identity);
+      }
+      throw error;
+    }
   }
 
   // Only used for the HOST-lowers-ANOTHER-participant's-hand path.
@@ -116,10 +159,17 @@ export class LiveKitService {
     identity: string,
     raised: boolean,
   ): Promise<void> {
-    await this.getRoomService().updateParticipant(
-      roomId,
-      identity,
-      JSON.stringify({ handRaised: raised }),
-    );
+    try {
+      await this.getRoomService().updateParticipant(
+        roomId,
+        identity,
+        JSON.stringify({ handRaised: raised }),
+      );
+    } catch (error) {
+      if (isParticipantNotConnected(error)) {
+        throw new LiveKitParticipantNotConnectedError(roomId, identity);
+      }
+      throw error;
+    }
   }
 }

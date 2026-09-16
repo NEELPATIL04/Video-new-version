@@ -7,7 +7,10 @@ import {
 } from '@nestjs/common';
 import { RoomsService } from './rooms.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { LiveKitService } from '../livekit/livekit.service';
+import {
+  LiveKitParticipantNotConnectedError,
+  LiveKitService,
+} from '../livekit/livekit.service';
 
 describe('RoomsService', () => {
   let service: RoomsService;
@@ -821,6 +824,20 @@ describe('RoomsService', () => {
       );
       expect(prisma.participant.update).not.toHaveBeenCalled();
     });
+
+    it('reports a clean 404 instead of crashing when the target is DB-active but not connected to LiveKit', async () => {
+      prisma.participant.findUnique.mockResolvedValue({
+        id: 'p-2',
+        leftAt: null,
+      });
+      liveKit.muteParticipantAudio.mockRejectedValue(
+        new LiveKitParticipantNotConnectedError('room-1', 'user-2'),
+      );
+
+      await expect(
+        service.muteParticipant('room-1', 'host-1', 'user-2'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
   });
 
   describe('removeParticipant', () => {
@@ -857,6 +874,21 @@ describe('RoomsService', () => {
         where: { id: 'p-2' },
         data: { leftAt: expect.any(Date) },
       });
+    });
+
+    it('reports a clean 404 instead of crashing when the target is DB-active but not connected to LiveKit, and does not reconcile leftAt', async () => {
+      prisma.participant.findUnique.mockResolvedValue({
+        id: 'p-2',
+        leftAt: null,
+      });
+      liveKit.removeParticipant.mockRejectedValue(
+        new LiveKitParticipantNotConnectedError('room-1', 'user-2'),
+      );
+
+      await expect(
+        service.removeParticipant('room-1', 'host-1', 'user-2'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(prisma.participant.update).not.toHaveBeenCalled();
     });
   });
 
@@ -903,6 +935,20 @@ describe('RoomsService', () => {
         false,
       );
       expect(prisma.participant.update).not.toHaveBeenCalled();
+    });
+
+    it('reports a clean 404 instead of crashing when the target is DB-active but not connected to LiveKit', async () => {
+      prisma.participant.findUnique.mockResolvedValue({
+        id: 'p-2',
+        leftAt: null,
+      });
+      liveKit.setHandRaised.mockRejectedValue(
+        new LiveKitParticipantNotConnectedError('room-1', 'user-2'),
+      );
+
+      await expect(
+        service.lowerParticipantHand('room-1', 'host-1', 'user-2'),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 });

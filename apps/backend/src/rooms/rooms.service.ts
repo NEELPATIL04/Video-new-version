@@ -7,7 +7,10 @@ import {
 } from '@nestjs/common';
 import { Prisma, RoomStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { LiveKitService } from '../livekit/livekit.service';
+import {
+  LiveKitParticipantNotConnectedError,
+  LiveKitService,
+} from '../livekit/livekit.service';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
 
@@ -462,13 +465,36 @@ export class RoomsService {
     return participant;
   }
 
+  // Our own Participant row can say "active" (leftAt: null) while
+  // LiveKit's live room no longer has that participant at all — e.g.
+  // mid-reconnect after a dropped connection, before leftAt catches up.
+  // Every host action that touches LiveKit directly after
+  // assertActiveNonSelfParticipant (mute/remove/lower-hand) goes through
+  // this so that gap surfaces as one honest, shared NotFoundException
+  // instead of each call site separately risking an unhandled 500 built
+  // from LiveKit's raw Twirp error.
+  private async runLiveKitAction<T>(action: () => Promise<T>): Promise<T> {
+    try {
+      return await action();
+    } catch (error) {
+      if (error instanceof LiveKitParticipantNotConnectedError) {
+        throw new NotFoundException(
+          'This participant is not currently connected to the call',
+        );
+      }
+      throw error;
+    }
+  }
+
   async muteParticipant(
     roomId: string,
     hostId: string,
     targetUserId: string,
   ): Promise<void> {
     await this.assertActiveNonSelfParticipant(roomId, hostId, targetUserId);
-    await this.liveKit.muteParticipantAudio(roomId, targetUserId);
+    await this.runLiveKitAction(() =>
+      this.liveKit.muteParticipantAudio(roomId, targetUserId),
+    );
   }
 
   async removeParticipant(
@@ -481,7 +507,9 @@ export class RoomsService {
       hostId,
       targetUserId,
     );
-    await this.liveKit.removeParticipant(roomId, targetUserId);
+    await this.runLiveKitAction(() =>
+      this.liveKit.removeParticipant(roomId, targetUserId),
+    );
     // Reconcile our own record with what just happened in LiveKit — the
     // capacity/lifecycle logic in joinRoom reads leftAt, so a removed
     // participant must be reflected here too, not just kicked from the
@@ -507,6 +535,8 @@ export class RoomsService {
     targetUserId: string,
   ): Promise<void> {
     await this.assertActiveNonSelfParticipant(roomId, hostId, targetUserId);
-    await this.liveKit.setHandRaised(roomId, targetUserId, false);
+    await this.runLiveKitAction(() =>
+      this.liveKit.setHandRaised(roomId, targetUserId, false),
+    );
   }
 }
