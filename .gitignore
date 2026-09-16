@@ -13,6 +13,9 @@ out/
 # — committing these would drift from whatever version is actually installed.
 apps/web/public/rnnoise/
 
+# Generated at install time from node_modules (scripts/copy-livekit-e2ee-worker.mjs)
+apps/web/public/livekit-e2ee-worker.mjs
+
 # Env
 .env
 .env.local

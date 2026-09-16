@@ -90,6 +90,16 @@ model Room {
   // the host themselves, are never affected by this flag.
   locked Boolean @default(false)
 
+  // Chosen once at creation, never toggled mid-call — the actual
+  // encryption key never touches this row (or any other server-side
+  // state): it's generated client-side and shared only via the room
+  // URL's fragment (`#key=...`), which browsers never send to any
+  // server. This flag exists purely so the join flow can tell a client
+  // "this room needs a key you don't have" (e.g. joining via the 9-digit
+  // code, which can't carry a fragment) instead of silently connecting
+  // with broken, undecryptable media. See FEATURES.md's Research notes.
+  e2eeEnabled Boolean @default(false)
+
   hostId String
   host   User   @relation("RoomHost", fields: [hostId], references: [id])
 

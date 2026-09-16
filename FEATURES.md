@@ -39,28 +39,28 @@ shipped and stable, per the tier-order rule.
 
 ## Tier 2 — v2 (standard — competitive parity with Meet/Zoom)
 
-| Feature                                                                                                                  | Tag |
-| ------------------------------------------------------------------------------------------------------------------------ | --- |
-| Virtual backgrounds — **done**, via `@livekit/track-processors` (MediaPipe segmentation, client-side only)               | v2  |
-| Background blur — **done**, same feature/implementation as virtual backgrounds above                                     | v2  |
-| Noise cancellation — **done**, via RNNoise (not LiveKit's Krisp package — that's LiveKit Cloud-only, see Research notes) | v2  |
-| Breakout rooms                                                                                                           | v2  |
-| Reactions/emojis — **done**, via LiveKit's own data channel (`useDataChannel`) — see Research notes                      | v2  |
-| Raise hand — **done**, via LiveKit participant metadata (not the data channel) — see Research notes                      | v2  |
-| Polls & Q&A                                                                                                              | v2  |
-| Collaborative whiteboard/annotation (in-app: blank canvas + draw-on-shared-screen, inside our own video call UI)         | v2  |
-| In-chat file sharing                                                                                                     | v2  |
-| Meeting lock — **done**, `Room.locked` + host-only lock/unlock endpoints — see Research notes                            | v2  |
-| Co-host / multiple hosts                                                                                                 | v2  |
-| Layout: grid view                                                                                                        | v2  |
-| Layout: speaker view                                                                                                     | v2  |
-| Layout: gallery view                                                                                                     | v2  |
-| Picture-in-picture mode                                                                                                  | v2  |
-| Device picker (mic/camera/speaker)                                                                                       | v2  |
-| Network quality indicator                                                                                                | v2  |
-| Meeting analytics (attendance, duration, join/leave times)                                                               | v2  |
-| Recording sharing (permissioned link)                                                                                    | v2  |
-| End-to-end encryption toggle                                                                                             | v2  |
+| Feature                                                                                                                    | Tag |
+| -------------------------------------------------------------------------------------------------------------------------- | --- |
+| Virtual backgrounds — **done**, via `@livekit/track-processors` (MediaPipe segmentation, client-side only)                 | v2  |
+| Background blur — **done**, same feature/implementation as virtual backgrounds above                                       | v2  |
+| Noise cancellation — **done**, via RNNoise (not LiveKit's Krisp package — that's LiveKit Cloud-only, see Research notes)   | v2  |
+| Breakout rooms                                                                                                             | v2  |
+| Reactions/emojis — **done**, via LiveKit's own data channel (`useDataChannel`) — see Research notes                        | v2  |
+| Raise hand — **done**, via LiveKit participant metadata (not the data channel) — see Research notes                        | v2  |
+| Polls & Q&A                                                                                                                | v2  |
+| Collaborative whiteboard/annotation (in-app: blank canvas + draw-on-shared-screen, inside our own video call UI)           | v2  |
+| In-chat file sharing                                                                                                       | v2  |
+| Meeting lock — **done**, `Room.locked` + host-only lock/unlock endpoints — see Research notes                              | v2  |
+| Co-host / multiple hosts                                                                                                   | v2  |
+| Layout: grid view                                                                                                          | v2  |
+| Layout: speaker view                                                                                                       | v2  |
+| Layout: gallery view                                                                                                       | v2  |
+| Picture-in-picture mode                                                                                                    | v2  |
+| Device picker (mic/camera/speaker)                                                                                         | v2  |
+| Network quality indicator                                                                                                  | v2  |
+| Meeting analytics (attendance, duration, join/leave times)                                                                 | v2  |
+| Recording sharing (permissioned link)                                                                                      | v2  |
+| End-to-end encryption toggle — **done**, via LiveKit's `ExternalE2EEKeyProvider` + a URL-fragment key — see Research notes | v2  |
 
 ---
 
@@ -349,6 +349,70 @@ nullable-column-then-backfill two-step because every existing row needed
 a _unique_ generated value with no natural default), this one is a single
 `ALTER TABLE ... ADD COLUMN ... DEFAULT false` — Postgres backfills every
 existing row with that default directly, no manual UPDATE needed.
+
+### End-to-end encryption — why the key lives in the URL fragment, not the backend
+
+LiveKit ships real E2EE support client-side (`ExternalE2EEKeyProvider`, a Web
+Worker doing frame-level encryption via Insertable Streams), confirmed by
+reading `livekit-client`'s actual shipped type definitions rather than
+assuming from docs — worth calling out that both `BaseKeyProvider` and
+`ExternalE2EEKeyProvider` are marked `@experimental` directly in the SDK's
+own source. Browser support is real and gated: it only works where
+`RTCRtpSender.prototype.createEncodedStreams` exists (Chromium-based
+browsers reliably; Safari/Firefox inconsistently), checked via the SDK's own
+`isE2EESupported()` rather than a hardcoded browser-agent guess.
+
+The part LiveKit does NOT solve is key distribution: `ExternalE2EEKeyProvider`
+is a single shared passphrase model — it encrypts once you hand it a key, but
+how that key reaches every participant is entirely the application's
+problem. Deriving or transmitting it through anything the backend already
+sees (a `Room` field, the join API, `joinCode` — already flagged elsewhere in
+this doc as a weak ~30-bit value) would mean the server could reconstruct
+the key, which isn't end-to-end at all, just obfuscation. The key is
+generated client-side (`crypto.getRandomValues`, see `e2ee.ts`) and shared
+only via the room URL's **fragment** (`#key=...`) — fragments are never sent
+to any server, by every browser, by spec — the same pattern real E2E group
+call products use for exactly this reason. `Room.e2eeEnabled` is the only
+piece of this that touches the database, and deliberately holds no key
+material at all; it exists purely so `joinRoom`'s response can tell a client
+"this room needs a key you don't have" instead of silently connecting with
+broken, undecryptable media.
+
+This has two concrete, deliberate consequences documented here rather than
+discovered later:
+
+- **Join-by-code cannot carry an E2EE key.** A 9-digit code has no way to
+  also convey a full key, so `JoinByCodeForm` checks `room.e2eeEnabled` and
+  refuses with a clear message rather than navigating into a join that would
+  fail (or worse, silently degrade) at the call stage.
+- **It's creation-time-only, not a live mid-call toggle.** LiveKit's E2EE is
+  configured on the `Room` object's construction options (keyProvider +
+  worker), not something turned on for an already-connected room without
+  every participant reconnecting. Toggling it mid-call would mean forcing
+  everyone to rejoin — a bigger, separate UX problem this doesn't attempt to
+  solve. A host chooses it once, at creation, same as `maxParticipants`.
+- **Scheduled meetings don't get the checkbox yet.** An instant meeting
+  redirects straight to its own URL after creation, so the host sees the
+  fragment-bearing link once, immediately, and can copy it from their
+  address bar. A scheduled meeting's share surface (calendar links, the
+  room list) never visits that URL at all — there'd be nowhere to recover
+  the key from afterward without storing it server-side, defeating the
+  whole point. Left out deliberately rather than half-built with a
+  localStorage-based recovery hack.
+
+**Recording will conflict with this later.** Whenever recording/Egress
+(Tier 5) gets built, it needs to explicitly refuse to run on an
+`e2eeEnabled` room — server-side Egress cannot decrypt client-side-encrypted
+media, so recording an E2EE call wouldn't fail loudly, it would silently
+save broken output. Noting this now so it isn't a surprise later.
+
+Verified with `e2ee.spec.ts`: the generated key never appears in any request
+URL or JSON body sent to the backend during the full create → join flow
+(the actual security claim, not just "the UI shows a lock icon"), a guest
+with the correct link reaches an encrypted call, join-by-code is refused
+with a clear reason, and an already-admitted participant opening a link
+with the fragment stripped is refused rather than silently joined
+unencrypted.
 
 ## Open items
 

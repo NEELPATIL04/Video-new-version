@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsDateString,
   IsInt,
   IsOptional,
@@ -27,4 +28,12 @@ export class CreateRoomDto {
   @Min(2)
   @Max(1000)
   maxParticipants?: number;
+
+  // Fixed for the room's lifetime once set — see Room.e2eeEnabled in
+  // schema.prisma for why this never changes mid-call. The actual
+  // encryption key is never sent to this endpoint (or anywhere else on
+  // the backend); it's generated client-side after creation succeeds.
+  @IsOptional()
+  @IsBoolean()
+  e2eeEnabled?: boolean;
 }
