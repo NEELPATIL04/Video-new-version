@@ -7,6 +7,7 @@ import { ExternalE2EEKeyProvider } from "livekit-client";
 import { LiveKitRoom, VideoConference } from "@livekit/components-react";
 import { HostControls } from "./HostControls";
 import { MeetingLockControl } from "./MeetingLockControl";
+import { PictureInPictureControl } from "./PictureInPictureControl";
 import { ReactionsControl } from "./ReactionsControl";
 import { RaiseHandControl } from "./RaiseHandControl";
 import { WaitingRoomHostPanel } from "./WaitingRoomHostPanel";
@@ -162,11 +163,17 @@ export function CallRoom({ roomId, liveKitUrl, liveKitToken, isHost, e2eeKey }: 
           (useLocalParticipant/useParticipants, both LiveKit's own hooks)
           — anyone can raise their own hand, not just the host; isHost is
           only used inside it to decide whether to show the "lower
-          someone else's hand" action. */}
+          someone else's hand" action. PictureInPictureControl is the
+          same not-dynamic-imported case again: it only touches the
+          standard browser Picture-in-Picture/DOM APIs at click time, no
+          third-party WASM/worker import cost to defer, and it's a
+          personal viewing preference like the two effects controls
+          above, not a call-wide action, so it renders for everyone. */}
       <BackgroundEffectsControl />
       <NoiseCancellationControl />
       <ReactionsControl />
       <RaiseHandControl roomId={roomId} isHost={isHost} />
+      <PictureInPictureControl />
     </LiveKitRoom>
   );
 }
