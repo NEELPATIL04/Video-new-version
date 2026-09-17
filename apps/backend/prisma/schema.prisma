@@ -25,6 +25,11 @@ enum RecordingStatus {
   failed
 }
 
+enum PollStatus {
+  open
+  closed
+}
+
 model User {
   id            String   @id @default(uuid())
   email         String   @unique
@@ -42,6 +47,8 @@ model User {
   hostedRooms   Room[]         @relation("RoomHost")
   participants  Participant[]
   refreshTokens RefreshToken[]
+  createdPolls  Poll[]
+  pollVotes     PollVote[]
 
   @@map("users")
 }
@@ -105,6 +112,7 @@ model Room {
 
   participants Participant[]
   recordings   Recording[]
+  polls        Poll[]
 
   @@map("rooms")
 }
@@ -142,4 +150,72 @@ model Recording {
   room   Room   @relation(fields: [roomId], references: [id])
 
   @@map("recordings")
+}
+
+// Unlike a reaction or a raised hand (ephemeral call state, never written
+// to Postgres — see FEATURES.md's Research notes on raise-hand), a poll's
+// question/options/votes are genuinely persisted: results must survive a
+// page refresh and be auditable after the fact, much closer in spirit to
+// Participant.admittedAt than to anything LiveKit-only. Single-question,
+// multiple-choice, one open poll per room at a time (PollsService enforces
+// that — see its own comment).
+model Poll {
+  id        String     @id @default(uuid())
+  question  String
+  status    PollStatus @default(open)
+  createdAt DateTime   @default(now())
+  closedAt  DateTime?
+
+  roomId String
+  room   Room   @relation(fields: [roomId], references: [id])
+
+  createdById String
+  createdBy   User   @relation(fields: [createdById], references: [id])
+
+  options PollOption[]
+  votes   PollVote[]
+
+  @@map("polls")
+}
+
+// A separate model (not a `String[]` column on Poll) specifically so a
+// per-option vote count can be read as a DB-level aggregate
+// (`_count: { select: { votes: true } }`) instead of pulling every vote
+// row into app memory and counting client-side — see FEATURES.md's
+// Research notes for the fuller reasoning.
+model PollOption {
+  id   String @id @default(uuid())
+  text String
+  // Preserves the host's original ordering (Prisma/Postgres don't
+  // otherwise guarantee row order) — options are displayed and voted on
+  // in the order the host defined them, not insertion-incidental order.
+  order Int
+
+  pollId String
+  poll   Poll   @relation(fields: [pollId], references: [id])
+
+  votes PollVote[]
+
+  @@map("poll_options")
+}
+
+// One row per (poll, user) — the unique constraint is what actually makes
+// "a participant can vote only once per poll" true; the service layer
+// checks it first for a clean 409, but the constraint is the real
+// guarantee under a race (two tabs voting at once).
+model PollVote {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  pollId String
+  poll   Poll   @relation(fields: [pollId], references: [id])
+
+  optionId String
+  option   PollOption @relation(fields: [optionId], references: [id])
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@unique([pollId, userId])
+  @@map("poll_votes")
 }
