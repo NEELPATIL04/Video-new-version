@@ -47,7 +47,7 @@ shipped and stable, per the tier-order rule.
 | Breakout rooms                                                                                                                 | v2  |
 | Reactions/emojis — **done**, via LiveKit's own data channel (`useDataChannel`) — see Research notes                            | v2  |
 | Raise hand — **done**, via LiveKit participant metadata (not the data channel) — see Research notes                            | v2  |
-| Polls & Q&A                                                                                                                    | v2  |
+| Polls & Q&A — **done**, persisted in Postgres with a REST fetch-on-mount for late joiners — see Research notes                 | v2  |
 | Collaborative whiteboard/annotation (in-app: blank canvas + draw-on-shared-screen, inside our own video call UI)               | v2  |
 | Meeting lock — **done**, `Room.locked` + host-only lock/unlock endpoints — see Research notes                                  | v2  |
 | Co-host / multiple hosts — **done**, `RoomRole.cohost` + `RoomHostOrCoHostGuard` — see Research notes                          | v2  |
@@ -571,6 +571,63 @@ resulting floating window is an OS-level surface entirely outside the
 page's own DOM/accessibility tree, so there's nothing left for
 Playwright to assert once `requestPictureInPicture()` resolves — that
 part was confirmed by hand in a real browser session instead.
+
+### Polls & Q&A — why the data channel alone would repeat raise-hand's bug, and how this one avoids it
+
+Raise-hand's research already established the failure mode: a fire-and-forget
+LiveKit data-channel broadcast never reaches a participant who wasn't
+connected at the moment it fired. Polls have the exact same shape of risk —
+a "poll created" event and every "vote cast" event are each one-off
+broadcasts — but a WORSE consequence if mishandled, because a poll's
+question/options/tally are real data that must be exactly correct (an
+emoji that never rendered is a shrug; a vote count that's silently short by
+one is the feature failing at its one job). That ruled out reusing
+raise-hand's fix as-is too: participant metadata is a good fit for small
+current-state values LiveKit already syncs (a boolean, a short string), but
+a poll's shape — a question, a variable number of options, and a running
+tally that changes on every vote — doesn't fit that primitive, and unlike a
+raised hand, results need to survive a page refresh and be auditable after
+the call ends. That combination (must be correct, must persist) means
+Postgres is the actual source of truth here, not LiveKit state of any kind:
+`Poll`/`PollOption`/`PollVote` in `schema.prisma`, with `PollOption` as its
+own model (not a `String[]` on `Poll`) specifically so each option's vote
+count is a DB-level aggregate (`_count: { select: { votes: true } }`)
+instead of pulling every vote row into app memory to count client-side.
+
+The design that follows from that: `PollControl` fetches
+`GET /rooms/:id/polls/current` once on mount, for every participant, before
+it ever looks at the data channel — this is what a late joiner actually
+sees the poll from, regardless of whether they missed the "created"
+broadcast, missed every "vote cast" broadcast, or joined after the poll was
+already closed. `getCurrentPoll` deliberately returns the room's most
+recent poll whether it's open OR closed (not "open only") — closing that
+gap mattered too, since a participant joining right after a host closes a
+poll needs to see the final results, not nothing. The data channel (topic
+`"polls"`) still exists and still matters for responsiveness, but only as a
+"something changed, go refetch" ping — never as the payload itself — so a
+dropped or delayed broadcast degrades to "this client updates a little
+late," never to "this client is wrong." `polls.spec.ts` is written to prove
+this specifically: its two late-joiner tests connect a fresh participant
+only AFTER a poll exists and votes were already cast, and again only AFTER
+the poll was closed — the exact scenario a data-channel-only
+implementation would pass in every manual two-person check and then fail
+silently in production.
+
+**Security surface, checked before writing new guards (per the standing
+research-alternatives rule from the reactions feature).** Every polls route
+is nested under `/rooms/:id/polls` specifically so it can reuse
+`RoomsModule`'s existing `RoomHostGuard`/`RoomMemberGuard` as-is (now
+exported from `RoomsModule` for this) rather than a new poll-specific guard
+pair — create/close are host-only, vote/current are any active room member,
+identical tiering to the rest of this app's room actions. Double-voting is
+blocked at the database level with `@@unique([pollId, userId])` on
+`PollVote`, not just an application-code check beforehand — the service
+layer checks first for a clean `409`, but a caught `P2002` on the actual
+insert is what closes the race a check-then-insert alone can't (two tabs
+voting at the same instant). Every lookup follows the same BOLA-safe
+`id + roomId` (and, for a vote's `optionId`, `id + pollId`) pattern used
+throughout this codebase, so a valid poll or option ID from a DIFFERENT
+room can never be read or voted on through another room's route.
 
 ## Open items
 
