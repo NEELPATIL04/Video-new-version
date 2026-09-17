@@ -9,6 +9,7 @@ import { HostControls } from "./HostControls";
 import { MeetingLockControl } from "./MeetingLockControl";
 import { ReactionsControl } from "./ReactionsControl";
 import { RaiseHandControl } from "./RaiseHandControl";
+import { PollControl } from "./PollControl";
 import { WaitingRoomHostPanel } from "./WaitingRoomHostPanel";
 
 // @livekit/track-processors pulls in MediaPipe's WASM segmentation model
@@ -167,6 +168,14 @@ export function CallRoom({ roomId, liveKitUrl, liveKitToken, isHost, e2eeKey }: 
       <NoiseCancellationControl />
       <ReactionsControl />
       <RaiseHandControl roomId={roomId} isHost={isHost} />
+      {/* Rendered for every participant, not just the host — a non-host
+          still needs to see and vote on an active poll, they just don't
+          get the create/close affordances (gated inside the component via
+          isHost). Unlike the host-only panels above, PollControl mounts
+          for everyone so a late joiner's own REST fetch-on-mount actually
+          runs — see PollControl's own comment and FEATURES.md's Research
+          notes for the late-joiner design writeup. */}
+      <PollControl roomId={roomId} isHost={isHost} />
     </LiveKitRoom>
   );
 }

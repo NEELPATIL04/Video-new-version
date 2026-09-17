@@ -158,3 +158,72 @@ export function lockRoom(id: string, accessToken: string) {
 export function unlockRoom(id: string, accessToken: string) {
   return apiFetch<Room>(`/rooms/${id}/unlock`, { method: "POST", accessToken });
 }
+
+// Unlike a reaction or raised hand, a poll's question/options/votes are
+// genuinely persisted (see schema.prisma's comment on the Poll model) —
+// this shape is what both the host's create form and every participant's
+// vote/results view render from.
+export interface PollOption {
+  id: string;
+  text: string;
+  voteCount: number;
+}
+
+export interface Poll {
+  id: string;
+  roomId: string;
+  question: string;
+  status: "open" | "closed";
+  createdAt: string;
+  closedAt: string | null;
+  options: PollOption[];
+  totalVotes: number;
+  // Scoped to the CALLER who fetched this poll — never derived from
+  // anything sent by the client, computed server-side from PollVote.
+  hasVoted: boolean;
+  votedOptionId: string | null;
+}
+
+// Host-only — the backend re-verifies at the DB level (RoomHostGuard),
+// same BOLA note as the other host actions above.
+export function createPoll(
+  roomId: string,
+  input: { question: string; options: string[] },
+  accessToken: string,
+) {
+  return apiFetch<Poll>(`/rooms/${roomId}/polls`, {
+    method: "POST",
+    body: input,
+    accessToken,
+  });
+}
+
+// The single most-recently-created poll for this room (open OR closed),
+// or null if the room has never had one. Called on mount by every
+// participant — this is the REST half of the late-joiner design (see
+// FEATURES.md's Research notes): the data channel broadcast alone would
+// never reach someone who joins after a poll already exists or has
+// already closed.
+export function getCurrentPoll(roomId: string, accessToken: string) {
+  return apiFetch<Poll | null>(`/rooms/${roomId}/polls/current`, { accessToken });
+}
+
+// Any active room member — the backend validates the optionId belongs to
+// THIS poll at the DB level and rejects a repeat vote (409).
+export function votePoll(roomId: string, pollId: string, optionId: string, accessToken: string) {
+  return apiFetch<Poll>(`/rooms/${roomId}/polls/${pollId}/vote`, {
+    method: "POST",
+    body: { optionId },
+    accessToken,
+  });
+}
+
+// Host-only — locks further voting; the poll and its results stay
+// visible (not deleted), same reasoning as endRoom preserving
+// participant history.
+export function closePoll(roomId: string, pollId: string, accessToken: string) {
+  return apiFetch<Poll>(`/rooms/${roomId}/polls/${pollId}/close`, {
+    method: "POST",
+    accessToken,
+  });
+}
