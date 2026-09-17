@@ -39,28 +39,28 @@ shipped and stable, per the tier-order rule.
 
 ## Tier 2 — v2 (standard — competitive parity with Meet/Zoom)
 
-| Feature                                                                                                                    | Tag |
-| -------------------------------------------------------------------------------------------------------------------------- | --- |
-| Virtual backgrounds — **done**, via `@livekit/track-processors` (MediaPipe segmentation, client-side only)                 | v2  |
-| Background blur — **done**, same feature/implementation as virtual backgrounds above                                       | v2  |
-| Noise cancellation — **done**, via RNNoise (not LiveKit's Krisp package — that's LiveKit Cloud-only, see Research notes)   | v2  |
-| Breakout rooms                                                                                                             | v2  |
-| Reactions/emojis — **done**, via LiveKit's own data channel (`useDataChannel`) — see Research notes                        | v2  |
-| Raise hand — **done**, via LiveKit participant metadata (not the data channel) — see Research notes                        | v2  |
-| Polls & Q&A                                                                                                                | v2  |
-| Collaborative whiteboard/annotation (in-app: blank canvas + draw-on-shared-screen, inside our own video call UI)           | v2  |
-| In-chat file sharing                                                                                                       | v2  |
-| Meeting lock — **done**, `Room.locked` + host-only lock/unlock endpoints — see Research notes                              | v2  |
-| Co-host / multiple hosts                                                                                                   | v2  |
-| Layout: grid view                                                                                                          | v2  |
-| Layout: speaker view                                                                                                       | v2  |
-| Layout: gallery view                                                                                                       | v2  |
-| Picture-in-picture mode                                                                                                    | v2  |
-| Device picker (mic/camera/speaker)                                                                                         | v2  |
-| Network quality indicator                                                                                                  | v2  |
-| Meeting analytics (attendance, duration, join/leave times)                                                                 | v2  |
-| Recording sharing (permissioned link)                                                                                      | v2  |
-| End-to-end encryption toggle — **done**, via LiveKit's `ExternalE2EEKeyProvider` + a URL-fragment key — see Research notes | v2  |
+| Feature                                                                                                                                                                  | Tag |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --- |
+| Virtual backgrounds — **done**, via `@livekit/track-processors` (MediaPipe segmentation, client-side only)                                                               | v2  |
+| Background blur — **done**, same feature/implementation as virtual backgrounds above                                                                                     | v2  |
+| Noise cancellation — **done**, via RNNoise (not LiveKit's Krisp package — that's LiveKit Cloud-only, see Research notes)                                                 | v2  |
+| Breakout rooms                                                                                                                                                           | v2  |
+| Reactions/emojis — **done**, via LiveKit's own data channel (`useDataChannel`) — see Research notes                                                                      | v2  |
+| Raise hand — **done**, via LiveKit participant metadata (not the data channel) — see Research notes                                                                      | v2  |
+| Polls & Q&A                                                                                                                                                              | v2  |
+| Collaborative whiteboard/annotation — **done**, plain HTML5 `<canvas>` + LiveKit data channel for live sync, persisted to Postgres for late joiners — see Research notes | v2  |
+| In-chat file sharing                                                                                                                                                     | v2  |
+| Meeting lock — **done**, `Room.locked` + host-only lock/unlock endpoints — see Research notes                                                                            | v2  |
+| Co-host / multiple hosts                                                                                                                                                 | v2  |
+| Layout: grid view                                                                                                                                                        | v2  |
+| Layout: speaker view                                                                                                                                                     | v2  |
+| Layout: gallery view                                                                                                                                                     | v2  |
+| Picture-in-picture mode                                                                                                                                                  | v2  |
+| Device picker (mic/camera/speaker)                                                                                                                                       | v2  |
+| Network quality indicator                                                                                                                                                | v2  |
+| Meeting analytics (attendance, duration, join/leave times)                                                                                                               | v2  |
+| Recording sharing (permissioned link)                                                                                                                                    | v2  |
+| End-to-end encryption toggle — **done**, via LiveKit's `ExternalE2EEKeyProvider` + a URL-fragment key — see Research notes                                               | v2  |
 
 ---
 
@@ -169,9 +169,9 @@ by "annotation" in their own feature lists.
   smoothing, or `tldraw` for a fuller whiteboard) absolutely-positioned over the shared-screen
   `<video>` element; pointer events converted to normalized (0–1) coordinates before
   broadcasting, so drawings stay aligned regardless of each viewer's own window size.
-- **Open design question**: ephemeral (clears when screen share stops, matching most
-  competitors' default) vs. persisted (needs a DB model + storage, closer to a real
-  whiteboard product) — worth deciding before starting, not mid-build.
+- **Design question, now resolved — see the dedicated Research notes entry below**:
+  persisted to Postgres, not ephemeral, specifically so a participant who joins after
+  strokes already exist doesn't see a blank canvas.
 
 **2. Cross-tab overlay — drawing on top of the presenter's OTHER browser tabs (Tier 3 row above) — needs a separate browser extension.**
 This is NOT achievable from our web app itself. Browsers deliberately sandbox a page so it
@@ -217,6 +217,81 @@ genuinely is native-app-class work, not something we're missing a trick for on t
   deliberate non-goal rather than something that quietly falls off the list — revisit only
   if a native desktop client ever gets greenlit for other reasons (it would make sense to
   bundle this with that effort, not build it standalone).
+
+### Whiteboard — persisted-plus-REST-fetch, chosen specifically to close the same late-joiner gap raise-hand already documented
+
+Raise hand's Research notes (above) already worked through the general shape
+of this problem: a plain LiveKit data-channel broadcast is fire-and-forget,
+so anyone connected before an event was sent will have already missed it —
+fine for something disposable like a reaction, a real correctness bug for
+anything that's supposed to represent current, persistent state. A
+whiteboard's drawn strokes are exactly that kind of state, arguably more so
+than a raised hand: nobody expects a raised hand to survive being lowered,
+but everybody expects a shared whiteboard to still have last week's — or
+even three minutes ago's — drawing on it when they join.
+
+Raise hand solved its version of this with LiveKit participant metadata,
+which LiveKit itself resyncs to new joiners. That mechanism doesn't fit
+here: metadata is a small per-participant string, and a whiteboard's stroke
+history is an unbounded, ordered, multi-author log — the wrong shape for a
+value LiveKit treats as "this participant's current state blob." So the
+fix has to be the more general one metadata was standing in for: persist
+the actual history somewhere durable, and have a newly-joined client fetch
+it directly instead of relying on having been present for every event that
+built up to it.
+
+Concretely: `WhiteboardStroke` rows in Postgres (one row per pen-down-to-
+pen-up gesture, see `schema.prisma`), fetched via `GET
+/rooms/:id/whiteboard/strokes` unconditionally on mount by
+`WhiteboardControl` — not lazily on first opening the panel, since the
+whole point is that a participant must see existing strokes the first time
+they look, not only if they happened to be connected when each stroke was
+drawn. Already-connected participants still get new strokes live over
+LiveKit's data channel (topic `"whiteboard"`, sent `reliable: true` unlike
+reactions' lossy sends — a dropped stroke would leave two canvases
+silently disagreeing for the rest of the call, with no later re-sync short
+of a full re-fetch); the REST fetch and the data channel are deliberately
+two separate paths solving two separate problems (initial state vs. live
+updates), the same split video-conferencing apps generally use for chat
+history vs. live messages.
+
+**Verified with `e2e/whiteboard.spec.ts`**, specifically a test named "a
+participant who joins AFTER a stroke has already been drawn still sees
+it" — guest B registers and gets admitted only after guest A has already
+drawn and broadcast a stroke, so any implementation relying purely on the
+data channel would leave guest B's canvas blank. The test reads the
+canvas's own pixel data (`getImageData`) rather than trusting in-memory
+React state, since the actual claim being verified is "this got painted,"
+not "some variable updated." This is the exact test shape raise-hand's own
+Research notes called out as the one that would have caught a wrong
+(data-channel-only) transport choice, applied to the whiteboard.
+
+### Whiteboard — hand-rolled `<canvas>`, not a third-party library
+
+Per the standing rule from the reactions research above (compare real
+alternatives on security surface and genuine open-source licensing before
+reaching for a platform/library default), the options considered for
+rendering were: a plain HTML5 `<canvas>` with hand-rolled pointer-event
+handling, vs. a drawing library (`perfect-freehand` for smoother stroke
+interpolation, or `tldraw` for a much fuller whiteboard editor — both
+flagged as options in this doc's earlier annotation research).
+
+Neither library earned its dependency for what FEATURES.md actually scopes
+here: "a blank canvas participants can draw on with a pen tool," not a
+full whiteboard editor with shapes, text, or infinite panning (that's
+`tldraw`'s entire value proposition, and none of it is asked for) or
+stroke-smoothing fidelity beyond what `ctx.lineTo` with `round` line
+caps/joins already gives a mouse- or touchpad-driven freehand line
+(`perfect-freehand`'s entire value proposition). Both are genuinely
+open-source (MIT), so licensing wasn't the blocker — the actual reasoning
+is the same KISS/YAGNI principle `DEV_STANDARDS.md` §2 already states for
+this codebase: don't add a dependency for capability the feature doesn't
+use. A plain `<canvas>` also has zero new security surface (no third-party
+code parsing untrusted input, no new supply-chain dependency to audit),
+which is the more usual thing this alternatives-comparison rule catches —
+here it happens to point the same direction as simplicity, not against it.
+Confirmed in `apps/web/package.json`: no drawing library was added for
+this feature.
 
 ### Noise cancellation — LiveKit's own official package doesn't work for a self-hosted server
 
@@ -419,5 +494,4 @@ unencrypted.
 - [ ] Confirm v1 scope with stakeholders before starting build
 - [ ] Define pricing/tier boundaries (what's free vs pro vs enterprise) — ties to billing design
 - [ ] Prioritize order within each tier once v1 scope is locked
-- [ ] Decide ephemeral vs. persisted whiteboard state before starting the Tier 2 annotation feature (see Research notes)
 - [ ] Decide whether cross-tab annotation (Tier 3) is worth a separate browser-extension codebase before scheduling it, given the store-review and maintenance overhead documented above
