@@ -39,28 +39,28 @@ shipped and stable, per the tier-order rule.
 
 ## Tier 2 — v2 (standard — competitive parity with Meet/Zoom)
 
-| Feature                                                                                                                    | Tag |
-| -------------------------------------------------------------------------------------------------------------------------- | --- |
-| Virtual backgrounds — **done**, via `@livekit/track-processors` (MediaPipe segmentation, client-side only)                 | v2  |
-| Background blur — **done**, same feature/implementation as virtual backgrounds above                                       | v2  |
-| Noise cancellation — **done**, via RNNoise (not LiveKit's Krisp package — that's LiveKit Cloud-only, see Research notes)   | v2  |
-| Breakout rooms                                                                                                             | v2  |
-| Reactions/emojis — **done**, via LiveKit's own data channel (`useDataChannel`) — see Research notes                        | v2  |
-| Raise hand — **done**, via LiveKit participant metadata (not the data channel) — see Research notes                        | v2  |
-| Polls & Q&A                                                                                                                | v2  |
-| Collaborative whiteboard/annotation (in-app: blank canvas + draw-on-shared-screen, inside our own video call UI)           | v2  |
-| In-chat file sharing                                                                                                       | v2  |
-| Meeting lock — **done**, `Room.locked` + host-only lock/unlock endpoints — see Research notes                              | v2  |
-| Co-host / multiple hosts                                                                                                   | v2  |
-| Layout: grid view                                                                                                          | v2  |
-| Layout: speaker view                                                                                                       | v2  |
-| Layout: gallery view                                                                                                       | v2  |
-| Picture-in-picture mode                                                                                                    | v2  |
-| Device picker (mic/camera/speaker)                                                                                         | v2  |
-| Network quality indicator                                                                                                  | v2  |
-| Meeting analytics (attendance, duration, join/leave times)                                                                 | v2  |
-| Recording sharing (permissioned link)                                                                                      | v2  |
-| End-to-end encryption toggle — **done**, via LiveKit's `ExternalE2EEKeyProvider` + a URL-fragment key — see Research notes | v2  |
+| Feature                                                                                                                                             | Tag |
+| --------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+| Virtual backgrounds — **done**, via `@livekit/track-processors` (MediaPipe segmentation, client-side only)                                          | v2  |
+| Background blur — **done**, same feature/implementation as virtual backgrounds above                                                                | v2  |
+| Noise cancellation — **done**, via RNNoise (not LiveKit's Krisp package — that's LiveKit Cloud-only, see Research notes)                            | v2  |
+| Breakout rooms                                                                                                                                      | v2  |
+| Reactions/emojis — **done**, via LiveKit's own data channel (`useDataChannel`) — see Research notes                                                 | v2  |
+| Raise hand — **done**, via LiveKit participant metadata (not the data channel) — see Research notes                                                 | v2  |
+| Polls & Q&A                                                                                                                                         | v2  |
+| Collaborative whiteboard/annotation (in-app: blank canvas + draw-on-shared-screen, inside our own video call UI)                                    | v2  |
+| In-chat file sharing                                                                                                                                | v2  |
+| Meeting lock — **done**, `Room.locked` + host-only lock/unlock endpoints — see Research notes                                                       | v2  |
+| Co-host / multiple hosts                                                                                                                            | v2  |
+| Layout: grid view                                                                                                                                   | v2  |
+| Layout: speaker view                                                                                                                                | v2  |
+| Layout: gallery view                                                                                                                                | v2  |
+| Picture-in-picture mode                                                                                                                             | v2  |
+| Device picker (mic/camera/speaker)                                                                                                                  | v2  |
+| Network quality indicator                                                                                                                           | v2  |
+| Meeting analytics (attendance, duration, join/leave times) — **done**, host-only, pure Postgres aggregation over `Participant` — see Research notes | v2  |
+| Recording sharing (permissioned link)                                                                                                               | v2  |
+| End-to-end encryption toggle — **done**, via LiveKit's `ExternalE2EEKeyProvider` + a URL-fragment key — see Research notes                          | v2  |
 
 ---
 
@@ -413,6 +413,90 @@ with the correct link reaches an encrypted call, join-by-code is refused
 with a clear reason, and an already-admitted participant opening a link
 with the fragment stripped is refused rather than silently joined
 unencrypted.
+
+### Meeting analytics — live-vs-post-hoc availability, and why duration doesn't come from a new column
+
+The one real design question for this feature: should `GET /rooms/:id/analytics`
+only work once a meeting has ended, or work anytime? Chose **anytime** —
+the endpoint is a pure Postgres read over `Participant` rows the app
+already writes (`joinedAt`/`leftAt`/`admittedAt` from `joinRoom`, `leaveRoom`,
+`endRoom`), with no LiveKit call involved, so there's no live-connection
+dependency forcing a "only after it ends" restriction the way something
+built on live LiveKit room state would have. Real products (Zoom, Meet)
+show attendance _during_ a call too, not just afterward, and a host
+mid-meeting asking "who's actually here right now, and for how long" is a
+genuinely useful question — restricting this to post-hoc review would
+throw that away for no real reason. A participant who hasn't left yet
+(`leftAt: null`) gets `stillInCall: true` and a duration computed against
+`now` instead of a stored end time; the response shape is identical before
+and after the meeting ends, so the same frontend page
+(`apps/web/src/app/rooms/[id]/analytics/page.tsx`) works for both without
+a mode flag.
+
+One exception, decided for correctness rather than for the live/post-hoc
+question: a **scheduled** room nobody has joined yet returns an explicit
+empty shape (`participants: []`, `meetingStartedAt: null`) instead of
+computing anything from data that exists but doesn't mean what it would
+look like it means. The host's own `Participant` row is created
+transactionally in `createRoom`, so it already has a `joinedAt` — but that
+timestamp is the _room's creation time_, not a real call join, until the
+host actually opens the call and hits `joinRoom` (which refreshes it,
+and is also what flips `Room.status` from `scheduled` to `active`). Gating
+on `RoomStatus.scheduled` rather than trying to special-case "the host's
+row doesn't count yet" keeps the logic in one place and matches a signal
+the codebase already treats as meaningful, instead of inventing a second
+one.
+
+**Why no new column for "meeting duration" or "ended at".** The task
+brief specifically flagged checking `Room.status`/`RoomStatus` and whether
+`updatedAt` already captures an end timestamp before adding anything new —
+it doesn't, safely. `Room.updatedAt` is a blanket `@updatedAt` bumped by
+_any_ write to the row (lock/unlock, a future rename, anything), including
+ones that can legitimately happen after a room has already ended (nothing
+in `lockRoom`/`unlockRoom` checks `RoomStatus`), so it can't be trusted to
+mean "this is when the meeting ended." `endRoom` already sets `leftAt` for
+every still-active participant in the same transaction that marks the room
+`ended` — so once `status === 'ended'`, every participant row has a real
+`leftAt`, and the latest of those _is_ exactly when the meeting ended,
+derived from data already being recorded for an unrelated reason rather
+than a new column that could itself drift out of sync with the participant
+rows it would be describing.
+
+**Why the service re-checks the host at the DB level, unlike every other
+host-only method in `RoomsService`.** Every other host-gated method
+(`lockRoom`, `unlockRoom`, `muteParticipant`, etc.) trusts `RoomHostGuard`
+alone — the guard's own `isHost` check already satisfies CLAUDE.md's BOLA
+rule ("verify ownership at the database query level, not just via a route
+guard") since it _is_ a DB query, just one that happens to live in the
+guard rather than the service. `getMeetingAnalytics` deliberately repeats
+that check inside `RoomsService` itself: this is the one endpoint in the
+Rooms module whose response is a full dump of every participant's name and
+complete join/leave history, materially more sensitive than "toggle a
+boolean" or "mute this one person," so applying the rule a second time
+here — at the one call site where a mistake would leak the most — was
+judged worth the small duplication. Covered directly in
+`rooms.service.spec.ts` (`getMeetingAnalytics` → "refuses a non-host") and
+in `meeting-analytics.spec.ts`, where a removed participant navigating
+straight to the analytics URL is refused (in practice by `RoomHostGuard`,
+which runs first — the service's own check is the defense-in-depth layer
+for a request that reached the method some other way).
+
+Verified with `meeting-analytics.spec.ts`: a real two-browser-context call
+(host + guest, admitted through the actual waiting-room flow, same as
+`two-user-call.spec.ts`), the guest genuinely removed mid-call (the one
+path currently wired in the UI to set `Participant.leftAt` —
+`leaveRoom`/`POST /rooms/:id/leave` exists in `RoomsService` and
+`features/rooms/api.ts` but isn't yet called from any button; flagged as a
+separate, pre-existing gap rather than fixed as part of this feature), then
+the host's analytics page is asserted against the real outcome: 2 unique
+participants, the host's row reading "still in call," the guest's row
+showing a real (non-empty, non-"still in call") left timestamp and a
+plausible non-zero duration, and the duration tile reading "so far" rather
+than a final total since the room is still active. A non-host is separately
+proven unable to reach the same room's analytics by navigating straight to
+the URL. Only the single-room view was built — a cross-meeting/aggregate-
+over-time dashboard was in scope as a stretch goal but wasn't attempted;
+the single-room view alone was enough work to get fully right and tested.
 
 ## Open items
 
