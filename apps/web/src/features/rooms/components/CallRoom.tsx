@@ -10,6 +10,7 @@ import { useAuthStore } from "@/features/auth/store";
 import { CoHostControl } from "./CoHostControl";
 import { HostControls } from "./HostControls";
 import { MeetingLockControl } from "./MeetingLockControl";
+import { PictureInPictureControl } from "./PictureInPictureControl";
 import { ReactionsControl } from "./ReactionsControl";
 import { RaiseHandControl } from "./RaiseHandControl";
 import { WaitingRoomHostPanel } from "./WaitingRoomHostPanel";
@@ -217,11 +218,17 @@ export function CallRoom({ roomId, liveKitUrl, liveKitToken, initialRole, e2eeKe
           — anyone can raise their own hand, not just the host; canManage
           is only used inside it to decide whether to show the "lower
           someone else's hand" action, extended to co-hosts the same way
-          as the panels above. */}
+          as the panels above. PictureInPictureControl is the same
+          not-dynamic-imported case again: it only touches the standard
+          browser Picture-in-Picture/DOM APIs at click time, no
+          third-party WASM/worker import cost to defer, and it's a
+          personal viewing preference like the two effects controls
+          above, not a call-wide action, so it renders for everyone. */}
       <BackgroundEffectsControl />
       <NoiseCancellationControl />
       <ReactionsControl />
       <RaiseHandControl roomId={roomId} canManage={canManage} />
+      <PictureInPictureControl />
     </LiveKitRoom>
   );
 }
