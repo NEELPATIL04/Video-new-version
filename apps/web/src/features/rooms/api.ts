@@ -263,3 +263,39 @@ export function closePoll(roomId: string, pollId: string, accessToken: string) {
     accessToken,
   });
 }
+
+export interface ParticipantAnalytics {
+  userId: string;
+  name: string;
+  role: Participant["role"];
+  joinedAt: string;
+  leftAt: string | null;
+  admittedAt: string | null;
+  // Mirrors the backend's own definition (leftAt === null) rather than
+  // being re-derived here — see RoomsService.getMeetingAnalytics.
+  stillInCall: boolean;
+  durationSec: number;
+}
+
+// Pure Postgres aggregation — no LiveKit connection required, so this
+// resolves identically whether the meeting is still live or already
+// ended. Host-only: the backend re-verifies at the DB level (RoomHostGuard
+// + a second hostId check inside the service itself, since this response
+// contains every participant's name and full join/leave history), so a
+// non-host calling this just gets a 403.
+export interface MeetingAnalytics {
+  roomId: string;
+  roomName: string;
+  status: "scheduled" | "active" | "ended";
+  meetingStartedAt: string | null;
+  // null while the meeting is still ongoing (or hasn't started) — only set
+  // once RoomStatus is 'ended'.
+  meetingEndedAt: string | null;
+  meetingDurationSec: number;
+  totalUniqueParticipants: number;
+  participants: ParticipantAnalytics[];
+}
+
+export function getMeetingAnalytics(roomId: string, accessToken: string) {
+  return apiFetch<MeetingAnalytics>(`/rooms/${roomId}/analytics`, { accessToken });
+}

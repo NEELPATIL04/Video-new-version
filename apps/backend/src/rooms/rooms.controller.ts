@@ -189,6 +189,21 @@ export class RoomsController {
     return this.rooms.removeParticipant(id, user.userId, userId);
   }
 
+  // Host-only. Pure Postgres aggregation over data joinRoom/leaveRoom/
+  // endRoom already record — no LiveKit call, so this works identically
+  // whether the meeting is still live or has already ended. See
+  // RoomsService.getMeetingAnalytics and FEATURES.md's Research notes for
+  // why it's deliberately available in either state rather than gated on
+  // RoomStatus.ended.
+  @UseGuards(RoomHostGuard)
+  @Get(':id/analytics')
+  getAnalytics(
+    @Param('id') id: string,
+    @CurrentUser() user: { userId: string },
+  ) {
+    return this.rooms.getMeetingAnalytics(id, user.userId);
+  }
+
   // Host or co-host lowering ANOTHER participant's hand (queue
   // management). A participant lowering their OWN hand never calls this —
   // that happens directly client-side via localParticipant.setMetadata(),

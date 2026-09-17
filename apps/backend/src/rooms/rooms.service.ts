@@ -427,6 +427,134 @@ export class RoomsService {
     });
   }
 
+  // Host-only, read-only aggregation over data the Rooms module already
+  // records via joinRoom/leaveRoom/endRoom — no new table, no LiveKit call.
+  // Deliberately available for a room in ANY status (scheduled/active/
+  // ended), not just after it's ended: a host mid-call gets "attendance so
+  // far" (duration computed against `now` for anyone who hasn't left yet),
+  // and the exact same endpoint keeps working after the meeting ends for
+  // post-hoc review — see FEATURES.md's Research notes for the full
+  // reasoning on why "anytime" beat gating this on RoomStatus.ended.
+  //
+  // Re-checks hostId at the DB level here (not just via RoomHostGuard) even
+  // though every other host-only method in this service trusts the guard
+  // alone — this endpoint's response contains every participant's name and
+  // full join/leave history, sensitive enough that CLAUDE.md's BOLA rule
+  // ("verify ownership at the database query level, not just via a route
+  // guard") is worth applying a second time here rather than relying
+  // solely on the guard having run.
+  async getMeetingAnalytics(roomId: string, requestingUserId: string) {
+    const room = await this.getRoomById(roomId);
+    if (room.hostId !== requestingUserId) {
+      throw new ForbiddenException(
+        "Only the host can view this meeting's analytics",
+      );
+    }
+
+    // A scheduled room that nobody has actually joined yet has no call
+    // session to report on: the host's own Participant row already exists
+    // (created transactionally in createRoom) but its joinedAt is just the
+    // room-creation timestamp, not a real join — reporting "duration since
+    // creation" for a meeting that hasn't started would be misleading, not
+    // just uninteresting.
+    if (room.status === RoomStatus.scheduled) {
+      return {
+        roomId: room.id,
+        roomName: room.name,
+        status: room.status,
+        meetingStartedAt: null,
+        meetingEndedAt: null,
+        meetingDurationSec: 0,
+        totalUniqueParticipants: 0,
+        participants: [] as Array<{
+          userId: string;
+          name: string;
+          role: string;
+          joinedAt: Date;
+          leftAt: Date | null;
+          admittedAt: Date | null;
+          stillInCall: boolean;
+          durationSec: number;
+        }>,
+      };
+    }
+
+    // Participant.@@unique([roomId, userId]) means each user ever gets at
+    // most one row per room (joinRoom upserts on reconnect rather than
+    // creating a new row) — so this list is already "unique participants",
+    // no de-duping needed.
+    const participants = await this.prisma.participant.findMany({
+      where: { roomId },
+      include: { user: { select: { name: true } } },
+      orderBy: { joinedAt: 'asc' },
+    });
+
+    const now = new Date();
+    const participantAnalytics = participants.map((p) => {
+      const stillInCall = p.leftAt === null;
+      const endPoint = p.leftAt ?? now;
+      const durationSec = Math.max(
+        0,
+        Math.round((endPoint.getTime() - p.joinedAt.getTime()) / 1000),
+      );
+      return {
+        userId: p.userId,
+        name: p.user.name,
+        role: p.role,
+        joinedAt: p.joinedAt,
+        leftAt: p.leftAt,
+        admittedAt: p.admittedAt,
+        stillInCall,
+        durationSec,
+      };
+    });
+
+    const meetingStartedAt = participants.reduce<Date | null>(
+      (earliest, p) =>
+        earliest === null || p.joinedAt < earliest ? p.joinedAt : earliest,
+      null,
+    );
+
+    // Room.updatedAt is deliberately NOT used as "ended at" — it's bumped
+    // by any mutation on the row (lock/unlock, a future rename, etc.),
+    // including ones that can legitimately happen after a meeting ends, so
+    // it can't be trusted to mean "when this meeting ended". endRoom sets
+    // leftAt for every still-active participant in the same transaction
+    // that marks the room ended, so once status is 'ended', every
+    // participant row has a leftAt — the latest of those IS exactly when
+    // the meeting ended, derived from data already being recorded rather
+    // than a new column.
+    const meetingEndedAt =
+      room.status === RoomStatus.ended
+        ? participants.reduce<Date | null>((latest, p) => {
+            if (!p.leftAt) return latest;
+            return latest === null || p.leftAt > latest ? p.leftAt : latest;
+          }, null)
+        : null;
+
+    const meetingDurationSec =
+      meetingStartedAt === null
+        ? 0
+        : Math.max(
+            0,
+            Math.round(
+              ((meetingEndedAt ?? now).getTime() - meetingStartedAt.getTime()) /
+                1000,
+            ),
+          );
+
+    return {
+      roomId: room.id,
+      roomName: room.name,
+      status: room.status,
+      meetingStartedAt,
+      meetingEndedAt,
+      meetingDurationSec,
+      totalUniqueParticipants: participants.length,
+      participants: participantAnalytics,
+    };
+  }
+
   async isHost(roomId: string, userId: string): Promise<boolean> {
     const room = await this.prisma.room.findUnique({
       where: { id: roomId },
