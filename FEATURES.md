@@ -39,28 +39,28 @@ shipped and stable, per the tier-order rule.
 
 ## Tier 2 — v2 (standard — competitive parity with Meet/Zoom)
 
-| Feature                                                                                                                    | Tag |
-| -------------------------------------------------------------------------------------------------------------------------- | --- |
-| Virtual backgrounds — **done**, via `@livekit/track-processors` (MediaPipe segmentation, client-side only)                 | v2  |
-| Background blur — **done**, same feature/implementation as virtual backgrounds above                                       | v2  |
-| Noise cancellation — **done**, via RNNoise (not LiveKit's Krisp package — that's LiveKit Cloud-only, see Research notes)   | v2  |
-| Breakout rooms                                                                                                             | v2  |
-| Reactions/emojis — **done**, via LiveKit's own data channel (`useDataChannel`) — see Research notes                        | v2  |
-| Raise hand — **done**, via LiveKit participant metadata (not the data channel) — see Research notes                        | v2  |
-| Polls & Q&A                                                                                                                | v2  |
-| Collaborative whiteboard/annotation (in-app: blank canvas + draw-on-shared-screen, inside our own video call UI)           | v2  |
-| In-chat file sharing                                                                                                       | v2  |
-| Meeting lock — **done**, `Room.locked` + host-only lock/unlock endpoints — see Research notes                              | v2  |
-| Co-host / multiple hosts                                                                                                   | v2  |
-| Layout: grid view                                                                                                          | v2  |
-| Layout: speaker view                                                                                                       | v2  |
-| Layout: gallery view                                                                                                       | v2  |
-| Picture-in-picture mode                                                                                                    | v2  |
-| Device picker (mic/camera/speaker)                                                                                         | v2  |
-| Network quality indicator                                                                                                  | v2  |
-| Meeting analytics (attendance, duration, join/leave times)                                                                 | v2  |
-| Recording sharing (permissioned link)                                                                                      | v2  |
-| End-to-end encryption toggle — **done**, via LiveKit's `ExternalE2EEKeyProvider` + a URL-fragment key — see Research notes | v2  |
+| Feature                                                                                                                        | Tag |
+| ------------------------------------------------------------------------------------------------------------------------------ | --- |
+| Virtual backgrounds — **done**, via `@livekit/track-processors` (MediaPipe segmentation, client-side only)                     | v2  |
+| Background blur — **done**, same feature/implementation as virtual backgrounds above                                           | v2  |
+| Noise cancellation — **done**, via RNNoise (not LiveKit's Krisp package — that's LiveKit Cloud-only, see Research notes)       | v2  |
+| Breakout rooms                                                                                                                 | v2  |
+| Reactions/emojis — **done**, via LiveKit's own data channel (`useDataChannel`) — see Research notes                            | v2  |
+| Raise hand — **done**, via LiveKit participant metadata (not the data channel) — see Research notes                            | v2  |
+| Polls & Q&A                                                                                                                    | v2  |
+| Collaborative whiteboard/annotation (in-app: blank canvas + draw-on-shared-screen, inside our own video call UI)               | v2  |
+| In-chat file sharing                                                                                                           | v2  |
+| Meeting lock — **done**, `Room.locked` + host-only lock/unlock endpoints — see Research notes                                  | v2  |
+| Co-host / multiple hosts                                                                                                       | v2  |
+| Layout: grid view                                                                                                              | v2  |
+| Layout: speaker view                                                                                                           | v2  |
+| Layout: gallery view                                                                                                           | v2  |
+| Picture-in-picture mode — **done**, native `HTMLVideoElement.requestPictureInPicture()`, client-side only — see Research notes | v2  |
+| Device picker (mic/camera/speaker)                                                                                             | v2  |
+| Network quality indicator                                                                                                      | v2  |
+| Meeting analytics (attendance, duration, join/leave times)                                                                     | v2  |
+| Recording sharing (permissioned link)                                                                                          | v2  |
+| End-to-end encryption toggle — **done**, via LiveKit's `ExternalE2EEKeyProvider` + a URL-fragment key — see Research notes     | v2  |
 
 ---
 
@@ -413,6 +413,85 @@ with the correct link reaches an encrypted call, join-by-code is refused
 with a clear reason, and an already-admitted participant opening a link
 with the fragment stripped is refused rather than silently joined
 unencrypted.
+
+### Picture-in-picture — no LiveKit API for this, a DOM query scoped by the SDK's own class names instead
+
+Pure client-side feature, no backend involvement at all: the browser's
+native `HTMLVideoElement.requestPictureInPicture()` on an existing
+`<video>` element. The only real design question was _which_ `<video>`
+element — this app wraps `VideoConference`, the LiveKit prefab, rather
+than hand-rolling the video grid (`DEV_STANDARDS.md` §9), and that
+component owns `GridLayout`/`FocusLayout`/`ParticipantTile` internally.
+Checked both options before building, per this project's standing
+research-before-building practice:
+
+- **(a) A LiveKit-native API for "give me the current video element."**
+  Doesn't exist. Read the actual shipped source, not just the `.d.ts`
+  (`node_modules/@livekit/components-react/src/components/participant/
+VideoTrack.tsx` and `.../hooks/useMediaTrackBySourceOrName.ts`) —
+  `VideoTrack` renders a bare `<video>` internally and attaches the
+  LiveKit `Track` to it via `track.attach(element)`, but `VideoConference`
+  never forwards a ref or exposes a hook for "the currently focused/local
+  track's element" to a consumer sitting outside the grid. There's
+  nothing to call here that isn't itself a DOM query.
+- **(b) A DOM query, scoped by the SDK's own markup rather than a blind
+  `document.querySelectorAll("video")`.** Chosen. `components-core`'s
+  `setupMediaTrack()` tags every video/audio element it manages with a
+  stable, prefixed class (`lk-participant-media-video`, `cssPrefix +
+"-participant-media-video"` — see `components-core/src/components/
+mediaTrack.ts` and `.../constants.ts`) plus `data-lk-source` /
+  `data-lk-local-participant` attributes. `PictureInPictureControl`
+  queries `video.lk-participant-media-video` scoped inside the
+  `LiveKitRoom`'s own `[data-lk-theme]` root (set by `CallRoom`), so it
+  can never accidentally grab a stray `<video>` elsewhere on the page.
+  This is a real fallback, not a hack: it relies on the SDK's own
+  rendering contract (the class/attributes are part of its public
+  styling API, not incidental), the same category of "read the shipped
+  source before assuming" that turned up the grid/speaker/gallery/device-
+  picker/network-quality rows as already-covered-for-free elsewhere in
+  this doc.
+
+**Picking which video, when several are on screen.** Not every tile is
+worth popping out while multitasking: `findPipCandidate()` filters to
+elements with actual decoded frames (`readyState`/`videoWidth`, so a
+tile whose track hasn't attached yet is skipped), then prefers a REMOTE
+participant's video over the local camera preview (the point of PiP is
+watching everyone else, not your own preview), and among ties picks
+whichever tile is currently rendered largest on screen — which tracks
+whatever layout `VideoConference` is using (grid vs. a manually pinned
+focus) without this component needing to know which one is active or
+duplicate that layout logic.
+
+**Feature detection, and why Safari isn't a maintained path here.**
+Gated on `document.pictureInPictureEnabled`, checked directly rather than
+assumed — same "real feature detection, not a browser-agent guess"
+standard as E2EE's `isE2EESupported()`. Chromium and Firefox both keep
+that flag accurate; Safari supports the same
+`requestPictureInPicture()` API but doesn't reliably set
+`document.pictureInPictureEnabled`, and would need a separate
+webkit-prefixed capability check (`webkitSupportsPresentationMode`) to
+detect properly. Not built: `playwright.config.ts` runs Chromium only
+(see its own comment on why — `next dev`/register-throttle reasons
+apply to every spec, this one included), so a Safari-specific code path
+would be unverifiable in this project's e2e matrix and was left as
+"control hides with an explanation" there rather than a maintained,
+untested branch.
+
+**What `picture-in-picture.spec.ts` can and can't prove.** Playwright
+drives real Chromium, so the feature-detection gate and the click
+handler's real `requestPictureInPicture()` call both run for real, not
+mocked — covered: the control renders for both host and guest (unlike
+`MeetingLockControl`, this isn't host-gated, since PiP is a personal
+viewing preference); a real click resolves to one of exactly two visible
+end states (entered PiP, or the try/catch's visible error message)
+within 5 seconds with no unhandled page error; and the unsupported-
+browser gate is verified against a _real_ forced
+`document.pictureInPictureEnabled = false` (via `addInitScript`, before
+the page loads), not a hardcoded stand-in. What it can't prove: the
+resulting floating window is an OS-level surface entirely outside the
+page's own DOM/accessibility tree, so there's nothing left for
+Playwright to assert once `requestPictureInPicture()` resolves — that
+part was confirmed by hand in a real browser session instead.
 
 ## Open items
 
