@@ -158,3 +158,76 @@ export function lockRoom(id: string, accessToken: string) {
 export function unlockRoom(id: string, accessToken: string) {
   return apiFetch<Room>(`/rooms/${id}/unlock`, { method: "POST", accessToken });
 }
+
+// --- Breakout rooms ---
+// See FEATURES.md's Research notes for the two design decisions behind
+// this feature: a new, minimal BreakoutRoom model (not a self-referencing
+// Room), and polling my-assignment (not a LiveKit data-channel/metadata
+// signal) for the reconnect notification.
+
+export interface BreakoutRoomDefinition {
+  label: string;
+  participantUserIds: string[];
+}
+
+export interface CreatedBreakoutRoom {
+  id: string;
+  label: string;
+  participantUserIds: string[];
+}
+
+export interface BreakoutRoom {
+  id: string;
+  label: string;
+  participants: { userId: string; user: { name: string } }[];
+}
+
+// Polled by every non-host participant's client while connected to the
+// call — see BreakoutRoomAwareCallRoom.tsx for how a transition here
+// drives disconnecting from one LiveKit room and connecting to another.
+export type MyBreakoutAssignment =
+  | { status: "none" }
+  | {
+      status: "assigned";
+      breakoutRoomId: string;
+      label: string;
+      liveKitUrl: string;
+      liveKitToken: string;
+    };
+
+// Host-only — the backend re-verifies at the DB level (RoomHostGuard),
+// same BOLA note as the other host actions above. Creates every room in
+// `rooms` and assigns the listed participants in a single request/
+// transaction, so no participant ever observes a half-split meeting.
+export function createBreakoutRooms(
+  roomId: string,
+  rooms: BreakoutRoomDefinition[],
+  accessToken: string,
+) {
+  return apiFetch<CreatedBreakoutRoom[]>(`/rooms/${roomId}/breakout-rooms`, {
+    method: "POST",
+    body: { rooms },
+    accessToken,
+  });
+}
+
+export function listBreakoutRooms(roomId: string, accessToken: string) {
+  return apiFetch<BreakoutRoom[]>(`/rooms/${roomId}/breakout-rooms`, { accessToken });
+}
+
+export function endBreakoutRooms(roomId: string, accessToken: string) {
+  return apiFetch<void>(`/rooms/${roomId}/breakout-rooms/end`, {
+    method: "POST",
+    accessToken,
+  });
+}
+
+// No host-only note here deliberately — this is scoped to the CALLER's
+// own assignment (roomId + the authenticated user), same as
+// getJoinStatus above; there is nothing here for one participant to peek
+// into another's assignment.
+export function getMyBreakoutAssignment(roomId: string, accessToken: string) {
+  return apiFetch<MyBreakoutAssignment>(`/rooms/${roomId}/breakout-rooms/my-assignment`, {
+    accessToken,
+  });
+}

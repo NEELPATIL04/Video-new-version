@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useAuthStore } from "@/features/auth/store";
 import { joinRoom, type JoinRoomResponse } from "@/features/rooms/api";
 import { getE2eeKeyFromUrl } from "@/features/rooms/e2ee";
-import { CallRoom } from "@/features/rooms/components/CallRoom";
+import { BreakoutRoomAwareCallRoom } from "@/features/rooms/components/BreakoutRoomAwareCallRoom";
 import { WaitingRoom } from "@/features/rooms/components/WaitingRoom";
 import { ApiError } from "@/lib/api-client";
 
@@ -111,7 +111,7 @@ export default function RoomCallPage() {
   }
 
   return (
-    <CallRoom
+    <BreakoutRoomAwareCallRoom
       roomId={id}
       liveKitUrl={joinResult!.liveKitUrl}
       liveKitToken={joinResult!.liveKitToken}

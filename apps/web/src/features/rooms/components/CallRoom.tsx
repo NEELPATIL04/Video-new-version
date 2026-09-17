@@ -3,13 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { ExternalE2EEKeyProvider } from "livekit-client";
+import { ExternalE2EEKeyProvider, type DisconnectReason } from "livekit-client";
 import { LiveKitRoom, VideoConference } from "@livekit/components-react";
 import { HostControls } from "./HostControls";
 import { MeetingLockControl } from "./MeetingLockControl";
 import { ReactionsControl } from "./ReactionsControl";
 import { RaiseHandControl } from "./RaiseHandControl";
 import { WaitingRoomHostPanel } from "./WaitingRoomHostPanel";
+import { BreakoutRoomsHostPanel } from "./BreakoutRoomsHostPanel";
 
 // @livekit/track-processors pulls in MediaPipe's WASM segmentation model
 // (~400KB+) and touches browser-only APIs (WebGL/insertable streams) at
@@ -38,6 +39,15 @@ interface CallRoomProps {
   // non-encrypted room — there is no "encryption off" value, only
   // "no key was ever provided."
   e2eeKey?: string;
+  // Overrides the default "any disconnect means leave the meeting"
+  // behavior below. BreakoutRoomAwareCallRoom uses this for its breakout
+  // connection: when the host ends breakouts, LiveKitService.
+  // deleteBreakoutRoom tears down THIS specific LiveKit room server-side,
+  // which fires this same disconnect event — but that means "go back to
+  // the main room," not "leave the meeting," and without this override
+  // the participant would get bounced to /rooms a beat before their own
+  // my-assignment poll ever got a chance to reconnect them.
+  onDisconnected?: (reason?: DisconnectReason) => void;
 }
 
 // Thin wrapper around LiveKit's own pre-built VideoConference prefab — grid
@@ -54,7 +64,14 @@ interface CallRoomProps {
 // signaling regardless of device permissions; VideoConference's own
 // control bar lets the participant turn camera/mic on afterward once
 // they've granted access.
-export function CallRoom({ roomId, liveKitUrl, liveKitToken, isHost, e2eeKey }: CallRoomProps) {
+export function CallRoom({
+  roomId,
+  liveKitUrl,
+  liveKitToken,
+  isHost,
+  e2eeKey,
+  onDisconnected,
+}: CallRoomProps) {
   const router = useRouter();
   const [e2eeError, setE2eeError] = useState<string | null>(null);
 
@@ -124,7 +141,7 @@ export function CallRoom({ roomId, liveKitUrl, liveKitToken, isHost, e2eeKey }: 
       data-lk-theme="default"
       style={{ height: "100vh", position: "relative" }}
       options={e2ee ? { e2ee } : undefined}
-      onDisconnected={() => router.push("/rooms")}
+      onDisconnected={onDisconnected ?? (() => router.push("/rooms"))}
       onEncryptionError={() =>
         setE2eeError(
           "An encryption error occurred — this usually means someone in the call has a different key.",
@@ -148,7 +165,19 @@ export function CallRoom({ roomId, liveKitUrl, liveKitToken, isHost, e2eeKey }: 
       {isHost && (
         <>
           <HostControls roomId={roomId} />
-          <WaitingRoomHostPanel roomId={roomId} />
+          {/* WaitingRoomHostPanel and BreakoutRoomsHostPanel both anchor to
+              the top-left corner and can each grow tall (a long waiting
+              list, a multi-room split with several participants) — a flex
+              column here stacks them instead of two independently
+              absolute-positioned boxes that would silently overlap and
+              intercept each other's clicks once either one grew past a
+              couple of rows. See CallRoom.tsx's own git history/PR for the
+              breakout-rooms feature: this exact overlap made the "assign a
+              participant" buttons unclickable in a real end-to-end test. */}
+          <div className="absolute top-4 left-4 z-10 flex flex-col gap-3 max-h-[80vh] overflow-y-auto">
+            <WaitingRoomHostPanel roomId={roomId} />
+            <BreakoutRoomsHostPanel roomId={roomId} />
+          </div>
           <MeetingLockControl roomId={roomId} />
         </>
       )}
