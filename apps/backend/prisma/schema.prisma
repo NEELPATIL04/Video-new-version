@@ -124,6 +124,7 @@ model Room {
   recordings        Recording[]
   polls             Poll[]
   whiteboardStrokes WhiteboardStroke[]
+  breakoutRooms     BreakoutRoom[]
 
   @@map("rooms")
 }
@@ -146,8 +147,47 @@ model Participant {
   userId String
   user   User   @relation(fields: [userId], references: [id])
 
+  // null = not currently assigned to a breakout (i.e. in the main room).
+  // Set by the host's assign action, cleared when the host ends breakouts
+  // for the room (or, in principle, by a future "move back" action). This
+  // lives on the SAME Participant row as the main room membership rather
+  // than a separate join table — a participant can only ever be assigned
+  // to one breakout room at a time, so there is no many-to-many shape to
+  // model here, just one more piece of this participant's current state
+  // in this meeting (see FEATURES.md's Research notes for the fuller
+  // reasoning on reusing Participant instead of inventing new rows).
+  breakoutRoomId String?
+  breakoutRoom   BreakoutRoom? @relation(fields: [breakoutRoomId], references: [id])
+
   @@unique([roomId, userId])
   @@map("participants")
+}
+
+// A breakout room is just another ordinary LiveKit room under the hood
+// (created via RoomServiceClient.createRoom(), same as the main Room),
+// scoped to a single parent meeting and never independently joinable —
+// there is deliberately no joinCode, scheduledFor, or status field here;
+// see FEATURES.md's Research notes for why this is a new, minimal model
+// rather than a self-referencing Room.
+model BreakoutRoom {
+  id    String @id @default(uuid())
+  // Host-assigned display name, e.g. "Room 1" — no uniqueness constraint
+  // needed; these are ephemeral and scoped to a single meeting.
+  label String
+
+  createdAt DateTime  @default(now())
+  // Set once by the host's "end breakouts" action; null while open. Kept
+  // as a real row (not deleted) so a client whose disconnect/reconnect
+  // races the end action can still resolve what happened, matching how
+  // Room itself keeps ended rooms around rather than deleting them.
+  endedAt   DateTime?
+
+  roomId String
+  room   Room   @relation(fields: [roomId], references: [id])
+
+  participants Participant[]
+
+  @@map("breakout_rooms")
 }
 
 model Recording {

@@ -66,7 +66,9 @@ export function WaitingRoomHostPanel({ roomId }: WaitingRoomHostPanelProps) {
   return (
     <div
       data-testid="waiting-room-host-panel"
-      className="absolute top-4 left-4 z-10 bg-black/80 text-white rounded p-3 text-sm w-56"
+      // Positioned by the flex-column wrapper in CallRoom.tsx, not
+      // independently absolute — see that wrapper's own comment for why.
+      className="bg-black/80 text-white rounded p-3 text-sm w-56 shrink-0"
     >
       <p className="font-medium mb-2">Waiting room ({waiting.length})</p>
       <ul className="flex flex-col gap-2">

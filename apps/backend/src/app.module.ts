@@ -10,6 +10,7 @@ import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { RoomsModule } from './rooms/rooms.module';
 import { PollsModule } from './polls/polls.module';
+import { BreakoutRoomsModule } from './breakout-rooms/breakout-rooms.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { PollsModule } from './polls/polls.module';
     AuthModule,
     RoomsModule,
     PollsModule,
+    BreakoutRoomsModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
