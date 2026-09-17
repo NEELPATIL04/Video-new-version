@@ -1,7 +1,9 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
+import { ExternalE2EEKeyProvider } from "livekit-client";
 import { LiveKitRoom, VideoConference } from "@livekit/components-react";
 import { HostControls } from "./HostControls";
 import { MeetingLockControl } from "./MeetingLockControl";
@@ -30,6 +32,12 @@ interface CallRoomProps {
   liveKitUrl: string;
   liveKitToken: string;
   isHost: boolean;
+  // Present only when this room is E2EE-enabled AND this participant's
+  // URL carried the key (see the [id]/page.tsx gate that refuses to
+  // reach this component at all otherwise). Absent entirely for a
+  // non-encrypted room — there is no "encryption off" value, only
+  // "no key was ever provided."
+  e2eeKey?: string;
 }
 
 // Thin wrapper around LiveKit's own pre-built VideoConference prefab — grid
@@ -46,8 +54,67 @@ interface CallRoomProps {
 // signaling regardless of device permissions; VideoConference's own
 // control bar lets the participant turn camera/mic on afterward once
 // they've granted access.
-export function CallRoom({ roomId, liveKitUrl, liveKitToken, isHost }: CallRoomProps) {
+export function CallRoom({ roomId, liveKitUrl, liveKitToken, isHost, e2eeKey }: CallRoomProps) {
   const router = useRouter();
+  const [e2eeError, setE2eeError] = useState<string | null>(null);
+
+  // Constructed once per mount, not per render — the worker in particular
+  // must not be recreated on every re-render (each `new Worker(...)` is a
+  // real thread the previous one would leak). useMemo with an empty-ish
+  // dependency (e2eeKey only flips once, at mount, per the page-level
+  // gate above) is enough here; this component doesn't need a full
+  // "recreate if the key changes mid-call" story since e2ee is
+  // creation-time-only and this component remounts on room change anyway
+  // (roomId is part of its key in the parent tree).
+  const e2ee = useMemo(() => {
+    if (!e2eeKey) return null;
+    return {
+      keyProvider: new ExternalE2EEKeyProvider(),
+      worker: new Worker("/livekit-e2ee-worker.mjs", { type: "module" }),
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ExternalE2EEKeyProvider.setKey() is async (PBKDF2 key derivation via
+  // Web Crypto) — LiveKit's own examples await this BEFORE connecting,
+  // not concurrently with it, so <LiveKitRoom connect> is deliberately
+  // held back (via the `null` render below) until this resolves, rather
+  // than trusting that publishing a track will always be slower.
+  const [e2eeReady, setE2eeReady] = useState(!e2ee);
+  useEffect(() => {
+    if (!e2ee || !e2eeKey) return;
+    let cancelled = false;
+    e2ee.keyProvider
+      .setKey(e2eeKey)
+      .then(() => {
+        if (!cancelled) setE2eeReady(true);
+      })
+      .catch(() => {
+        if (!cancelled) setE2eeError("Couldn't set up encryption for this meeting.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [e2ee, e2eeKey]);
+
+  if (e2eeKey && !e2eeReady && !e2eeError) {
+    return (
+      <main className="flex items-center justify-center flex-1" style={{ height: "100vh" }}>
+        <p className="text-sm text-gray-500">Setting up encryption...</p>
+      </main>
+    );
+  }
+
+  if (e2eeError) {
+    return (
+      <main className="flex flex-col items-center justify-center flex-1 gap-4" style={{ height: "100vh" }}>
+        <p className="text-sm text-red-600">{e2eeError}</p>
+        <button onClick={() => router.push("/rooms")} className="underline text-sm">
+          Back to meetings
+        </button>
+      </main>
+    );
+  }
 
   return (
     <LiveKitRoom
@@ -56,8 +123,19 @@ export function CallRoom({ roomId, liveKitUrl, liveKitToken, isHost }: CallRoomP
       connect
       data-lk-theme="default"
       style={{ height: "100vh", position: "relative" }}
+      options={e2ee ? { e2ee } : undefined}
       onDisconnected={() => router.push("/rooms")}
+      onEncryptionError={() =>
+        setE2eeError(
+          "An encryption error occurred — this usually means someone in the call has a different key.",
+        )
+      }
     >
+      {e2ee && (
+        <div className="absolute top-4 left-4 z-10 bg-black/80 text-white text-xs rounded px-2 py-1">
+          🔒 Encrypted
+        </div>
+      )}
       <VideoConference />
       {/* Inside LiveKitRoom's context so HostControls can read the live
           participant list — HostControls itself gates rendering when no

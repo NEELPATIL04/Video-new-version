@@ -51,6 +51,7 @@ describe('RoomsService', () => {
     hostId: 'host-1',
     createdAt: new Date(),
     updatedAt: new Date(),
+    e2eeEnabled: false,
     ...overrides,
   });
 
@@ -121,6 +122,33 @@ describe('RoomsService', () => {
         },
       });
       expect(result).toBe(room);
+    });
+
+    it('defaults e2eeEnabled to false when not specified', async () => {
+      const room = makeRoom();
+      prisma.room.create.mockResolvedValue(room);
+      prisma.participant.create.mockResolvedValue({ id: 'p-1', role: 'host' });
+
+      await service.createRoom('host-1', { name: 'Standup' });
+
+      expect(prisma.room.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ e2eeEnabled: false }),
+      });
+    });
+
+    it('persists e2eeEnabled: true when the host opts in at creation', async () => {
+      const room = makeRoom({ e2eeEnabled: true });
+      prisma.room.create.mockResolvedValue(room);
+      prisma.participant.create.mockResolvedValue({ id: 'p-1', role: 'host' });
+
+      await service.createRoom('host-1', {
+        name: 'Standup',
+        e2eeEnabled: true,
+      });
+
+      expect(prisma.room.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ e2eeEnabled: true }),
+      });
     });
 
     it('rejects a scheduledFor date that is not in the future', async () => {
@@ -493,6 +521,7 @@ describe('RoomsService', () => {
         participant: expect.objectContaining({ id: 'p-3' }),
         liveKitUrl: 'ws://localhost:7880',
         liveKitToken: 'signed-token',
+        e2eeEnabled: false,
       });
       expect(liveKit.createAccessToken).toHaveBeenCalledWith({
         identity: 'user-3',
@@ -556,6 +585,7 @@ describe('RoomsService', () => {
     });
 
     it('returns "denied" once the participant has been denied (leftAt set, never admitted)', async () => {
+      prisma.room.findUnique.mockResolvedValue(makeRoom());
       prisma.participant.findUnique.mockResolvedValue({
         id: 'p-2',
         leftAt: new Date(),
@@ -569,6 +599,7 @@ describe('RoomsService', () => {
     });
 
     it('returns "waiting" while still sitting in the waiting room', async () => {
+      prisma.room.findUnique.mockResolvedValue(makeRoom());
       prisma.participant.findUnique.mockResolvedValue({
         id: 'p-2',
         leftAt: null,
@@ -587,6 +618,7 @@ describe('RoomsService', () => {
     });
 
     it('returns "admitted" with a fresh LiveKit token once the host has admitted them', async () => {
+      prisma.room.findUnique.mockResolvedValue(makeRoom());
       prisma.participant.findUnique.mockResolvedValue({
         id: 'p-2',
         leftAt: null,
@@ -603,7 +635,26 @@ describe('RoomsService', () => {
         participant: expect.objectContaining({ id: 'p-2' }),
         liveKitUrl: 'ws://localhost:7880',
         liveKitToken: 'signed-token',
+        e2eeEnabled: false,
       });
+    });
+
+    it('includes e2eeEnabled: true in the admitted result for an encrypted room', async () => {
+      prisma.room.findUnique.mockResolvedValue(makeRoom({ e2eeEnabled: true }));
+      prisma.participant.findUnique.mockResolvedValue({
+        id: 'p-2',
+        leftAt: null,
+        admittedAt: new Date(),
+        userId: 'user-2',
+        role: 'participant',
+        user: { name: 'User Two' },
+      });
+
+      const result = await service.getParticipantStatus('room-1', 'user-2');
+
+      expect(result).toEqual(
+        expect.objectContaining({ status: 'admitted', e2eeEnabled: true }),
+      );
     });
   });
 

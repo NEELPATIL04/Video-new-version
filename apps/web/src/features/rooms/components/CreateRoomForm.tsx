@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { isE2EESupported } from "livekit-client";
 import { createRoom } from "../api";
+import { generateE2eeKey, buildRoomPath } from "../e2ee";
 import { useAuthStore } from "@/features/auth/store";
 import { ApiError } from "@/lib/api-client";
 
@@ -18,6 +20,9 @@ const schema = z
     // treated as the browser's local time when passed to `new Date(...)`,
     // which is what a person picking a time in their own calendar expects.
     scheduledFor: z.string().optional(),
+    // Only meaningful for an instant meeting — see the checkbox's own
+    // note below for why a scheduled meeting can't offer this yet.
+    e2eeEnabled: z.boolean(),
   })
   .refine((v) => !v.scheduleForLater || !!v.scheduledFor, {
     message: "Pick a date and time",
@@ -30,11 +35,30 @@ const schema = z
 
 type FormValues = z.infer<typeof schema>;
 
+// isE2EESupported() itself is SSR-safe (it checks `typeof window` before
+// touching any browser API), but its real answer only exists client-side
+// — the server always sees "no window" and would report false whether or
+// not the requesting browser actually supports it. useSyncExternalStore
+// is the tool React provides for exactly this "value legitimately
+// differs between server and client" case: getServerSnapshot fixes what
+// the server (and the client's first hydration pass) renders, avoiding a
+// hydration mismatch, and React re-invokes getSnapshot once hydrated to
+// pick up the real client-side answer — no manual effect + setState
+// needed, which is also what this repo's lint config (justifiably) flags
+// as an anti-pattern for exactly this kind of "sync on mount" logic.
+const noopSubscribe = () => () => {};
+const getServerE2eeSupport = () => false;
+
 export function CreateRoomForm() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const accessToken = useAuthStore((s) => s.accessToken);
   const [serverError, setServerError] = useState<string | null>(null);
+  const e2eeSupported = useSyncExternalStore(
+    noopSubscribe,
+    isE2EESupported,
+    getServerE2eeSupport,
+  );
 
   const {
     register,
@@ -43,7 +67,7 @@ export function CreateRoomForm() {
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { scheduleForLater: false },
+    defaultValues: { scheduleForLater: false, e2eeEnabled: false },
   });
 
   // useWatch (not the `watch` method off useForm()) — it's the React
@@ -54,6 +78,16 @@ export function CreateRoomForm() {
   const onSubmit = async (values: FormValues) => {
     if (!accessToken) return;
     setServerError(null);
+    // Only an instant meeting redirects to its own room URL right after
+    // creation — that's the one moment this key exists anywhere, so it's
+    // also the only flow that can currently embed it in a shareable link.
+    // A scheduled meeting's "share later" links (calendar invites, etc.)
+    // never visit /rooms/:id themselves, so there'd be nowhere to recover
+    // the key from afterward without storing it server-side and breaking
+    // the whole point — deliberately out of scope until that's solved
+    // (see FEATURES.md's Research notes).
+    const e2eeKey =
+      values.e2eeEnabled && !values.scheduleForLater ? generateE2eeKey() : undefined;
     try {
       const room = await createRoom(
         {
@@ -63,6 +97,7 @@ export function CreateRoomForm() {
           scheduledFor: values.scheduleForLater && values.scheduledFor
             ? new Date(values.scheduledFor).toISOString()
             : undefined,
+          e2eeEnabled: !!e2eeKey,
         },
         accessToken,
       );
@@ -73,7 +108,7 @@ export function CreateRoomForm() {
         // shows up, same as any other room the host now owns.
         await queryClient.invalidateQueries({ queryKey: ["rooms"] });
       } else {
-        router.push(`/rooms/${room.id}`);
+        router.push(buildRoomPath(room.id, e2eeKey));
       }
     } catch (err) {
       setServerError(err instanceof ApiError ? err.message : "Something went wrong");
@@ -108,6 +143,24 @@ export function CreateRoomForm() {
         <input type="checkbox" {...register("scheduleForLater")} />
         Schedule for later
       </label>
+
+      {e2eeSupported && !scheduleForLater && (
+        <>
+          <label className="flex items-center gap-2 text-sm text-gray-600">
+            <input type="checkbox" {...register("e2eeEnabled")} />
+            Enable end-to-end encryption
+          </label>
+          <p className="text-xs text-gray-400 -mt-1">
+            Only works with the full meeting link, not the join code — anyone joining will need
+            the exact link you share right after starting the meeting.
+          </p>
+        </>
+      )}
+      {!e2eeSupported && !scheduleForLater && (
+        <p className="text-xs text-gray-400">
+          End-to-end encryption isn&apos;t available in this browser.
+        </p>
+      )}
 
       {scheduleForLater && (
         <div className="flex flex-col gap-1">

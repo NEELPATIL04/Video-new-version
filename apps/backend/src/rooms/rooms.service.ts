@@ -29,6 +29,12 @@ type JoinResult =
       participant: ParticipantWithUser;
       liveKitUrl: string;
       liveKitToken: string;
+      // Lets the client tell "no key in the URL because this room isn't
+      // encrypted" apart from "no key in the URL but this room needs
+      // one" (e.g. joined via the 9-digit code, which can't carry a
+      // URL fragment) — the latter must refuse to connect rather than
+      // silently join with broken, undecryptable media.
+      e2eeEnabled: boolean;
     }
   | { status: 'denied' };
 
@@ -57,6 +63,7 @@ export class RoomsService {
           maxParticipants: dto.maxParticipants,
           hostId,
           joinCode,
+          e2eeEnabled: dto.e2eeEnabled ?? false,
         },
       });
 
@@ -264,7 +271,7 @@ export class RoomsService {
       });
     }
 
-    return this.buildJoinResult(roomId, participant);
+    return this.buildJoinResult(room, participant);
   }
 
   // Polled by a waiting participant's client to find out when the host has
@@ -278,6 +285,7 @@ export class RoomsService {
     roomId: string,
     userId: string,
   ): Promise<JoinResult> {
+    const room = await this.getRoomById(roomId);
     const participant = await this.prisma.participant.findUnique({
       where: { roomId_userId: { roomId, userId } },
       include: { user: { select: { name: true } } },
@@ -291,11 +299,11 @@ export class RoomsService {
       return { status: 'denied' };
     }
 
-    return this.buildJoinResult(roomId, participant);
+    return this.buildJoinResult(room, participant);
   }
 
   private async buildJoinResult(
-    roomId: string,
+    room: { id: string; e2eeEnabled: boolean },
     participant: ParticipantWithUser,
   ): Promise<JoinResult> {
     if (!participant.admittedAt) {
@@ -305,7 +313,7 @@ export class RoomsService {
     const liveKitToken = await this.liveKit.createAccessToken({
       identity: participant.userId,
       name: participant.user.name,
-      roomId,
+      roomId: room.id,
       role: participant.role,
     });
 
@@ -314,6 +322,7 @@ export class RoomsService {
       participant,
       liveKitUrl: this.liveKit.getUrl(),
       liveKitToken,
+      e2eeEnabled: room.e2eeEnabled,
     };
   }
 

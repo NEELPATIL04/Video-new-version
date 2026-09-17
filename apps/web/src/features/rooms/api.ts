@@ -18,6 +18,11 @@ export interface Room {
   // with a 403 ("This meeting is locked") but never affects someone who
   // already has a Participant row — including the host.
   locked: boolean;
+  // Fixed at creation, never toggled mid-call — see e2ee.ts and
+  // FEATURES.md's Research notes. The actual key never appears anywhere
+  // in this Room object or any other API response; it only ever lives in
+  // the room URL's fragment, which this object has no access to.
+  e2eeEnabled: boolean;
 }
 
 export interface WaitingParticipant {
@@ -41,11 +46,20 @@ export type JoinRoomResponse =
       participant: WaitingParticipant;
       liveKitUrl: string;
       liveKitToken: string;
+      // See Room.e2eeEnabled above — lets the call page tell "this room
+      // was never encrypted" apart from "this room needs a key you
+      // don't have" before it ever tries to connect.
+      e2eeEnabled: boolean;
     }
   | { status: "denied" };
 
 export function createRoom(
-  input: { name: string; scheduledFor?: string; maxParticipants?: number },
+  input: {
+    name: string;
+    scheduledFor?: string;
+    maxParticipants?: number;
+    e2eeEnabled?: boolean;
+  },
   accessToken: string,
 ) {
   return apiFetch<Room>("/rooms", { method: "POST", body: input, accessToken });

@@ -34,6 +34,14 @@ export function JoinByCodeForm() {
     setServerError(null);
     try {
       const room = await getRoomByCode(values.code, accessToken);
+      // A join code can't carry a URL fragment, so an E2EE-enabled room
+      // is unreachable this way by design — fail here with a clear
+      // reason rather than navigating into a join that [id]/page.tsx
+      // would refuse anyway (see its own e2eeKey gate).
+      if (room.e2eeEnabled) {
+        setServerError("This meeting is end-to-end encrypted — ask the host for the full link instead.");
+        return;
+      }
       router.push(`/rooms/${room.id}`);
     } catch (err) {
       setServerError(

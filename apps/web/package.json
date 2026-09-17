@@ -10,7 +10,7 @@
     "type-check": "tsc --noEmit",
     "depcruise": "node ../../node_modules/dependency-cruiser/bin/dependency-cruise.mjs src",
     "test:e2e": "playwright test",
-    "postinstall": "node scripts/copy-rnnoise-assets.mjs"
+    "postinstall": "node scripts/copy-rnnoise-assets.mjs && node scripts/copy-livekit-e2ee-worker.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",
