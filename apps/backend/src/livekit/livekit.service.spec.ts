@@ -14,6 +14,8 @@ const mockGetParticipant = jest.fn();
 const mockMutePublishedTrack = jest.fn();
 const mockRemoveParticipant = jest.fn();
 const mockUpdateParticipant = jest.fn();
+const mockCreateRoom = jest.fn();
+const mockDeleteRoom = jest.fn();
 jest.mock('livekit-server-sdk', () => {
   const actual = jest.requireActual('livekit-server-sdk');
   return {
@@ -23,6 +25,8 @@ jest.mock('livekit-server-sdk', () => {
       mutePublishedTrack: mockMutePublishedTrack,
       removeParticipant: mockRemoveParticipant,
       updateParticipant: mockUpdateParticipant,
+      createRoom: mockCreateRoom,
+      deleteRoom: mockDeleteRoom,
     })),
   };
 });
@@ -165,6 +169,41 @@ describe('LiveKitService', () => {
 
   it('getUrl returns the configured LiveKit URL', () => {
     expect(service.getUrl()).toBe('ws://localhost:7880');
+  });
+
+  // A breakout room is just another ordinary LiveKit room (see
+  // FEATURES.md's Research notes) — these two methods are thin wrappers
+  // around the same RoomServiceClient used for everything else here,
+  // proving no new admin-API surface was invented for this feature.
+  describe('createBreakoutRoom / deleteBreakoutRoom', () => {
+    beforeEach(() => {
+      mockCreateRoom.mockReset();
+      mockDeleteRoom.mockReset();
+    });
+
+    it('creates a LiveKit room named after the breakout room id', async () => {
+      mockCreateRoom.mockResolvedValue({});
+
+      await service.createBreakoutRoom('breakout-1');
+
+      expect(mockCreateRoom).toHaveBeenCalledWith({ name: 'breakout-1' });
+    });
+
+    it('deletes the LiveKit room for a breakout room', async () => {
+      mockDeleteRoom.mockResolvedValue(undefined);
+
+      await service.deleteBreakoutRoom('breakout-1');
+
+      expect(mockDeleteRoom).toHaveBeenCalledWith('breakout-1');
+    });
+
+    it('swallows a deleteRoom failure rather than throwing — DB state is the source of truth, not LiveKit', async () => {
+      mockDeleteRoom.mockRejectedValue(new Error('already gone'));
+
+      await expect(
+        service.deleteBreakoutRoom('breakout-1'),
+      ).resolves.toBeUndefined();
+    });
   });
 
   // Real evidence this shape is right, not a guess: while building

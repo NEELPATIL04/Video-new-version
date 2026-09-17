@@ -142,6 +142,35 @@ export class LiveKitService {
     }
   }
 
+  // A breakout room is just another ordinary LiveKit room (see
+  // FEATURES.md's Research notes) — there is no "breakout" primitive in
+  // LiveKit at all. Pre-creating it explicitly (rather than relying on
+  // LiveKit's implicit "first participant to join creates the room"
+  // behavior) means an empty breakout room the host hasn't assigned
+  // anyone to yet still genuinely exists as a room, and its name is
+  // always the BreakoutRoom's own id — a fresh, unguessable UUID distinct
+  // from any main Room's id (different table, same id space, and neither
+  // is ever derived from the other), so there's no risk of a breakout
+  // room name colliding with an existing main-room LiveKit room.
+  async createBreakoutRoom(name: string): Promise<void> {
+    await this.getRoomService().createRoom({ name });
+  }
+
+  // Best-effort cleanup when the host ends breakouts — deliberately NOT
+  // in the critical path. Our own DB state (BreakoutRoom.endedAt,
+  // Participant.breakoutRoomId cleared) is the source of truth a
+  // participant's poll reacts to; if LiveKit's room happens to already be
+  // gone (e.g. its emptyTimeout already fired) or this call otherwise
+  // fails, that must never block the DB-level "breakouts have ended" from
+  // taking effect.
+  async deleteBreakoutRoom(name: string): Promise<void> {
+    try {
+      await this.getRoomService().deleteRoom(name);
+    } catch {
+      // Swallowed deliberately — see comment above.
+    }
+  }
+
   // Only used for the HOST-lowers-ANOTHER-participant's-hand path.
   // Raising/lowering your OWN hand goes straight from the browser via
   // localParticipant.setMetadata() (see the canUpdateOwnMetadata grant
