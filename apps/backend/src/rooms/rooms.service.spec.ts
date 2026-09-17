@@ -1002,4 +1002,201 @@ describe('RoomsService', () => {
       ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
+
+  describe('getMeetingAnalytics', () => {
+    const makeParticipant = (overrides: Record<string, unknown> = {}) => ({
+      id: 'p-x',
+      userId: 'user-x',
+      role: 'participant',
+      joinedAt: new Date('2026-01-01T10:00:00.000Z'),
+      leftAt: null,
+      admittedAt: new Date('2026-01-01T10:00:00.000Z'),
+      user: { name: 'User X' },
+      ...overrides,
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('throws NotFoundException for a missing room', async () => {
+      prisma.room.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.getMeetingAnalytics('nope', 'host-1'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(prisma.participant.findMany).not.toHaveBeenCalled();
+    });
+
+    it('refuses a non-host — never leaks attendance data to a stranger', async () => {
+      prisma.room.findUnique.mockResolvedValue(
+        makeRoom({ status: 'active', hostId: 'host-1' }),
+      );
+
+      await expect(
+        service.getMeetingAnalytics('room-1', 'not-the-host'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prisma.participant.findMany).not.toHaveBeenCalled();
+    });
+
+    it('returns a trivial "not started" shape for a scheduled room, without querying participants', async () => {
+      prisma.room.findUnique.mockResolvedValue(
+        makeRoom({ status: 'scheduled', hostId: 'host-1' }),
+      );
+
+      const result = await service.getMeetingAnalytics('room-1', 'host-1');
+
+      expect(result).toEqual({
+        roomId: 'room-1',
+        roomName: 'Standup',
+        status: 'scheduled',
+        meetingStartedAt: null,
+        meetingEndedAt: null,
+        meetingDurationSec: 0,
+        totalUniqueParticipants: 0,
+        participants: [],
+      });
+      expect(prisma.participant.findMany).not.toHaveBeenCalled();
+    });
+
+    it('computes durationSec as leftAt - joinedAt for a participant who has already left', async () => {
+      prisma.room.findUnique.mockResolvedValue(
+        makeRoom({ status: 'active', hostId: 'host-1' }),
+      );
+      prisma.participant.findMany.mockResolvedValue([
+        makeParticipant({
+          userId: 'user-2',
+          joinedAt: new Date('2026-01-01T10:00:00.000Z'),
+          leftAt: new Date('2026-01-01T10:05:00.000Z'), // 5 minutes
+          user: { name: 'User Two' },
+        }),
+      ]);
+
+      const result = await service.getMeetingAnalytics('room-1', 'host-1');
+
+      expect(result.participants).toEqual([
+        expect.objectContaining({
+          userId: 'user-2',
+          name: 'User Two',
+          stillInCall: false,
+          durationSec: 300,
+        }),
+      ]);
+    });
+
+    it('computes durationSec as now - joinedAt for a participant still in the call (leftAt: null)', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-01-01T10:10:00.000Z'));
+      prisma.room.findUnique.mockResolvedValue(
+        makeRoom({ status: 'active', hostId: 'host-1' }),
+      );
+      prisma.participant.findMany.mockResolvedValue([
+        makeParticipant({
+          userId: 'user-2',
+          joinedAt: new Date('2026-01-01T10:00:00.000Z'),
+          leftAt: null,
+          user: { name: 'User Two' },
+        }),
+      ]);
+
+      const result = await service.getMeetingAnalytics('room-1', 'host-1');
+
+      expect(result.participants).toEqual([
+        expect.objectContaining({
+          userId: 'user-2',
+          stillInCall: true,
+          durationSec: 600, // 10 minutes against the frozen "now"
+        }),
+      ]);
+    });
+
+    it('aggregates multiple participants: totalUniqueParticipants and per-participant durations', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-01-01T11:00:00.000Z'));
+      prisma.room.findUnique.mockResolvedValue(
+        makeRoom({ status: 'active', hostId: 'host-1' }),
+      );
+      prisma.participant.findMany.mockResolvedValue([
+        makeParticipant({
+          userId: 'host-1',
+          role: 'host',
+          joinedAt: new Date('2026-01-01T10:00:00.000Z'),
+          leftAt: null,
+          user: { name: 'Host' },
+        }),
+        makeParticipant({
+          userId: 'user-2',
+          joinedAt: new Date('2026-01-01T10:05:00.000Z'),
+          leftAt: new Date('2026-01-01T10:35:00.000Z'), // 30 minutes
+          user: { name: 'User Two' },
+        }),
+        makeParticipant({
+          userId: 'user-3',
+          joinedAt: new Date('2026-01-01T10:10:00.000Z'),
+          leftAt: new Date('2026-01-01T10:20:00.000Z'), // 10 minutes
+          user: { name: 'User Three' },
+        }),
+      ]);
+
+      const result = await service.getMeetingAnalytics('room-1', 'host-1');
+
+      expect(result.totalUniqueParticipants).toBe(3);
+      expect(result.participants).toHaveLength(3);
+      expect(result.participants).toEqual([
+        expect.objectContaining({ userId: 'host-1', durationSec: 3600 }),
+        expect.objectContaining({ userId: 'user-2', durationSec: 1800 }),
+        expect.objectContaining({ userId: 'user-3', durationSec: 600 }),
+      ]);
+    });
+
+    it('an ongoing (non-ended) room has meetingEndedAt: null and measures duration against now', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-01-01T10:30:00.000Z'));
+      prisma.room.findUnique.mockResolvedValue(
+        makeRoom({ status: 'active', hostId: 'host-1' }),
+      );
+      prisma.participant.findMany.mockResolvedValue([
+        makeParticipant({
+          userId: 'host-1',
+          role: 'host',
+          joinedAt: new Date('2026-01-01T10:00:00.000Z'),
+          leftAt: null,
+        }),
+      ]);
+
+      const result = await service.getMeetingAnalytics('room-1', 'host-1');
+
+      expect(result.meetingStartedAt).toEqual(
+        new Date('2026-01-01T10:00:00.000Z'),
+      );
+      expect(result.meetingEndedAt).toBeNull();
+      expect(result.meetingDurationSec).toBe(1800);
+    });
+
+    it("an ended room's meetingEndedAt is the latest participant leftAt, not Room.updatedAt", async () => {
+      prisma.room.findUnique.mockResolvedValue(
+        makeRoom({ status: 'ended', hostId: 'host-1' }),
+      );
+      prisma.participant.findMany.mockResolvedValue([
+        makeParticipant({
+          userId: 'host-1',
+          role: 'host',
+          joinedAt: new Date('2026-01-01T10:00:00.000Z'),
+          leftAt: new Date('2026-01-01T10:45:00.000Z'),
+        }),
+        makeParticipant({
+          userId: 'user-2',
+          joinedAt: new Date('2026-01-01T10:05:00.000Z'),
+          leftAt: new Date('2026-01-01T10:40:00.000Z'),
+        }),
+      ]);
+
+      const result = await service.getMeetingAnalytics('room-1', 'host-1');
+
+      expect(result.meetingStartedAt).toEqual(
+        new Date('2026-01-01T10:00:00.000Z'),
+      );
+      expect(result.meetingEndedAt).toEqual(
+        new Date('2026-01-01T10:45:00.000Z'),
+      );
+      expect(result.meetingDurationSec).toBe(45 * 60);
+    });
+  });
 });
