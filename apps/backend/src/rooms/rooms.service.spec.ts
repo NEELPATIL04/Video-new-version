@@ -32,6 +32,13 @@ describe('RoomsService', () => {
       count: jest.Mock;
       findMany: jest.Mock;
     };
+    whiteboardStroke: {
+      create: jest.Mock;
+      findMany: jest.Mock;
+      findFirst: jest.Mock;
+      delete: jest.Mock;
+      deleteMany: jest.Mock;
+    };
     $transaction: jest.Mock;
   };
   let liveKit: {
@@ -73,6 +80,13 @@ describe('RoomsService', () => {
         deleteMany: jest.fn(),
         count: jest.fn(),
         findMany: jest.fn(),
+      },
+      whiteboardStroke: {
+        create: jest.fn(),
+        findMany: jest.fn(),
+        findFirst: jest.fn(),
+        delete: jest.fn(),
+        deleteMany: jest.fn(),
       },
       $transaction: jest.fn((arg) => {
         // Mirrors Prisma's two $transaction call shapes used in the
@@ -1000,6 +1014,134 @@ describe('RoomsService', () => {
       await expect(
         service.lowerParticipantHand('room-1', 'host-1', 'user-2'),
       ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('whiteboard', () => {
+    const points = [
+      { x: 0.1, y: 0.1 },
+      { x: 0.2, y: 0.2 },
+    ];
+
+    describe('listWhiteboardStrokes', () => {
+      it('returns strokes for the room ordered oldest-first', async () => {
+        const strokes = [{ id: 'stroke-1' }, { id: 'stroke-2' }];
+        prisma.whiteboardStroke.findMany.mockResolvedValue(strokes);
+
+        const result = await service.listWhiteboardStrokes('room-1');
+
+        expect(prisma.whiteboardStroke.findMany).toHaveBeenCalledWith({
+          where: { roomId: 'room-1' },
+          orderBy: { createdAt: 'asc' },
+        });
+        expect(result).toBe(strokes);
+      });
+    });
+
+    describe('addWhiteboardStroke', () => {
+      it('persists a stroke scoped to the room and the calling user', async () => {
+        prisma.room.findUnique.mockResolvedValue(makeRoom());
+        const created = { id: 'stroke-1', points, color: '#ff0000', width: 3 };
+        prisma.whiteboardStroke.create.mockResolvedValue(created);
+
+        const result = await service.addWhiteboardStroke('room-1', 'user-1', {
+          points,
+          color: '#ff0000',
+        });
+
+        expect(prisma.whiteboardStroke.create).toHaveBeenCalledWith({
+          data: {
+            roomId: 'room-1',
+            authorId: 'user-1',
+            points,
+            color: '#ff0000',
+            width: 3,
+          },
+        });
+        expect(result).toBe(created);
+      });
+
+      it('defaults width when none is supplied', async () => {
+        prisma.room.findUnique.mockResolvedValue(makeRoom());
+        prisma.whiteboardStroke.create.mockResolvedValue({});
+
+        await service.addWhiteboardStroke('room-1', 'user-1', {
+          points,
+          color: '#00ff00',
+          width: 8,
+        });
+
+        expect(prisma.whiteboardStroke.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({ width: 8 }),
+        });
+      });
+
+      it('404s if the room does not exist', async () => {
+        prisma.room.findUnique.mockResolvedValue(null);
+
+        await expect(
+          service.addWhiteboardStroke('room-x', 'user-1', {
+            points,
+            color: '#ff0000',
+          }),
+        ).rejects.toBeInstanceOf(NotFoundException);
+        expect(prisma.whiteboardStroke.create).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('undoLastWhiteboardStroke', () => {
+      it("deletes only the CALLING user's own most recent stroke in this room", async () => {
+        const stroke = { id: 'stroke-9', authorId: 'user-1' };
+        prisma.whiteboardStroke.findFirst.mockResolvedValue(stroke);
+
+        const result = await service.undoLastWhiteboardStroke(
+          'room-1',
+          'user-1',
+        );
+
+        expect(prisma.whiteboardStroke.findFirst).toHaveBeenCalledWith({
+          where: { roomId: 'room-1', authorId: 'user-1' },
+          orderBy: { createdAt: 'desc' },
+        });
+        expect(prisma.whiteboardStroke.delete).toHaveBeenCalledWith({
+          where: { id: 'stroke-9' },
+        });
+        expect(result).toBe(stroke);
+      });
+
+      it('404s when the calling user has nothing of their own to undo — even if other participants have drawn strokes', async () => {
+        // The key BOLA-shaped guarantee here: this query is scoped by
+        // authorId, so it can never find (and therefore never delete)
+        // another participant's stroke just because one exists in the
+        // room.
+        prisma.whiteboardStroke.findFirst.mockResolvedValue(null);
+
+        await expect(
+          service.undoLastWhiteboardStroke('room-1', 'user-1'),
+        ).rejects.toBeInstanceOf(NotFoundException);
+        expect(prisma.whiteboardStroke.delete).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('clearWhiteboard', () => {
+      it('deletes every stroke in the room, not scoped to any one author', async () => {
+        prisma.room.findUnique.mockResolvedValue(makeRoom());
+
+        await service.clearWhiteboard('room-1');
+
+        expect(prisma.whiteboardStroke.deleteMany).toHaveBeenCalledWith({
+          where: { roomId: 'room-1' },
+        });
+      });
+
+      it('404s if the room does not exist', async () => {
+        prisma.room.findUnique.mockResolvedValue(null);
+
+        await expect(service.clearWhiteboard('room-x')).rejects.toBeInstanceOf(
+          NotFoundException,
+        );
+        expect(prisma.whiteboardStroke.deleteMany).not.toHaveBeenCalled();
+      });
     });
   });
 });

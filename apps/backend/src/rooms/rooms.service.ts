@@ -13,6 +13,9 @@ import {
 } from '../livekit/livekit.service';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
+import { CreateWhiteboardStrokeDto } from './dto/create-whiteboard-stroke.dto';
+
+const DEFAULT_STROKE_WIDTH = 3;
 
 type ParticipantWithUser = Prisma.ParticipantGetPayload<{
   include: { user: { select: { name: true } } };
@@ -547,5 +550,73 @@ export class RoomsService {
     await this.runLiveKitAction(() =>
       this.liveKit.setHandRaised(roomId, targetUserId, false),
     );
+  }
+
+  // Late-joiner path: fetched via REST on mount by WhiteboardControl,
+  // before that client has any live data-channel connection to have
+  // missed broadcasts on. Ordered oldest-first so the canvas replays in
+  // the order strokes were actually drawn. See FEATURES.md's Research
+  // notes for why this (DB persistence + REST fetch), not LiveKit
+  // metadata or a peer-resync protocol, was chosen for a whiteboard.
+  listWhiteboardStrokes(roomId: string) {
+    return this.prisma.whiteboardStroke.findMany({
+      where: { roomId },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  // Persists the stroke so a future late joiner can fetch it via
+  // listWhiteboardStrokes above. The caller (WhiteboardControl) is
+  // responsible for ALSO broadcasting it over the LiveKit data channel so
+  // already-connected participants see it live without polling — this
+  // method only does the persistence half.
+  async addWhiteboardStroke(
+    roomId: string,
+    authorId: string,
+    dto: CreateWhiteboardStrokeDto,
+  ) {
+    await this.getRoomById(roomId);
+    return this.prisma.whiteboardStroke.create({
+      data: {
+        roomId,
+        authorId,
+        // dto.points is a validated array of {x,y} DTO instances, already
+        // plain-object-shaped — Prisma's InputJsonValue just doesn't
+        // structurally recognize a class-validator array type, so this
+        // is a type-level cast only, not a runtime transformation.
+        points: dto.points as unknown as Prisma.InputJsonValue,
+        color: dto.color,
+        width: dto.width ?? DEFAULT_STROKE_WIDTH,
+      },
+    });
+  }
+
+  // Undoes the CALLER's own most recent stroke only — scoped to authorId
+  // from the authenticated request, never a client-supplied stroke id, so
+  // this can't be used to undo someone else's drawing (same DB-level-
+  // scoping principle as assertActiveNonSelfParticipant elsewhere in this
+  // file, just applied to "whose row can this request touch" rather than
+  // "which participant can this request target").
+  async undoLastWhiteboardStroke(roomId: string, authorId: string) {
+    const stroke = await this.prisma.whiteboardStroke.findFirst({
+      where: { roomId, authorId },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!stroke) {
+      throw new NotFoundException("You haven't drawn anything to undo");
+    }
+    await this.prisma.whiteboardStroke.delete({ where: { id: stroke.id } });
+    return stroke;
+  }
+
+  // Host-only (see RoomHostGuard on the controller route) — clears every
+  // participant's strokes, not just the caller's own. "Everyone can draw"
+  // is this feature's collaborative default, but wiping out everyone
+  // ELSE's work too is a meaningfully more destructive action than
+  // undoing your own last stroke, so it gets the same stricter guard as
+  // mute/remove/lock rather than RoomMemberGuard.
+  async clearWhiteboard(roomId: string): Promise<void> {
+    await this.getRoomById(roomId);
+    await this.prisma.whiteboardStroke.deleteMany({ where: { roomId } });
   }
 }

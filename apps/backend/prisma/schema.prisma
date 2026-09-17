@@ -39,9 +39,10 @@ model User {
   failedLoginAttempts Int       @default(0)
   lockedUntil         DateTime?
 
-  hostedRooms   Room[]         @relation("RoomHost")
-  participants  Participant[]
-  refreshTokens RefreshToken[]
+  hostedRooms       Room[]             @relation("RoomHost")
+  participants      Participant[]
+  refreshTokens     RefreshToken[]
+  whiteboardStrokes WhiteboardStroke[]
 
   @@map("users")
 }
@@ -103,8 +104,9 @@ model Room {
   hostId String
   host   User   @relation("RoomHost", fields: [hostId], references: [id])
 
-  participants Participant[]
-  recordings   Recording[]
+  participants      Participant[]
+  recordings        Recording[]
+  whiteboardStrokes WhiteboardStroke[]
 
   @@map("rooms")
 }
@@ -142,4 +144,41 @@ model Recording {
   room   Room   @relation(fields: [roomId], references: [id])
 
   @@map("recordings")
+}
+
+// Persisted so a participant who joins the call AFTER strokes have
+// already been drawn can fetch the current canvas via REST on mount,
+// instead of silently seeing a blank canvas — a plain LiveKit data-
+// channel broadcast (used for live sync between already-connected
+// participants) is fire-and-forget and would otherwise miss them
+// entirely, the exact same late-joiner gap raise-hand's Research notes
+// already worked through for participant metadata. See FEATURES.md's
+// Research notes for the full alternatives comparison (this vs. a
+// peer-resync protocol with no backend persistence at all).
+//
+// `points` stores the whole freehand stroke as one row (an array of
+// normalized 0-1 {x,y} coordinates, sampled from pointermove events) —
+// one row per pen-down-to-pen-up gesture, not one row per point, which
+// keeps "undo my last stroke" a single-row delete rather than needing
+// to group points by some synthetic stroke id.
+model WhiteboardStroke {
+  id        String   @id @default(uuid())
+  points    Json
+  color     String
+  width     Int      @default(3)
+  createdAt DateTime @default(now())
+
+  roomId String
+  room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  // Never a client-supplied value — always the authenticated caller's own
+  // id (see RoomsService.addWhiteboardStroke/undoLastWhiteboardStroke).
+  // "Undo" is scoped to the caller's own most recent stroke via this
+  // column, never a client-supplied stroke id, so nobody can undo
+  // someone else's contribution.
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id])
+
+  @@index([roomId, createdAt])
+  @@map("whiteboard_strokes")
 }
