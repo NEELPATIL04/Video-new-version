@@ -9,6 +9,7 @@ import { HostControls } from "./HostControls";
 import { MeetingLockControl } from "./MeetingLockControl";
 import { ReactionsControl } from "./ReactionsControl";
 import { RaiseHandControl } from "./RaiseHandControl";
+import { WhiteboardControl } from "./WhiteboardControl";
 import { WaitingRoomHostPanel } from "./WaitingRoomHostPanel";
 
 // @livekit/track-processors pulls in MediaPipe's WASM segmentation model
@@ -162,11 +163,19 @@ export function CallRoom({ roomId, liveKitUrl, liveKitToken, isHost, e2eeKey }: 
           (useLocalParticipant/useParticipants, both LiveKit's own hooks)
           — anyone can raise their own hand, not just the host; isHost is
           only used inside it to decide whether to show the "lower
-          someone else's hand" action. */}
+          someone else's hand" action. WhiteboardControl is the same
+          shape again: a plain <canvas> element and useDataChannel have
+          no browser-only import-time dependency the way the WASM/worker-
+          based controls above do, so it's imported directly too — no
+          ssr:false needed. Everyone can draw (isHost only gates the
+          more destructive "Clear canvas" action inside it) — see
+          FEATURES.md's Research notes for the late-joiner design and the
+          hand-rolled-canvas-vs-library decision. */}
       <BackgroundEffectsControl />
       <NoiseCancellationControl />
       <ReactionsControl />
       <RaiseHandControl roomId={roomId} isHost={isHost} />
+      <WhiteboardControl roomId={roomId} isHost={isHost} />
     </LiveKitRoom>
   );
 }
