@@ -14,6 +14,7 @@ import { Throttle } from '@nestjs/throttler';
 import { RoomsService } from './rooms.service';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
+import { CreateWhiteboardStrokeDto } from './dto/create-whiteboard-stroke.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RoomHostGuard } from './guards/room-host.guard';
 import { RoomHostOrCoHostGuard } from './guards/room-host-or-cohost.guard';
@@ -248,5 +249,54 @@ export class RoomsController {
     @CurrentUser() user: { userId: string },
   ) {
     return this.rooms.demoteCoHost(id, user.userId, userId);
+  }
+
+  // Late-joiner path — fetched on mount by WhiteboardControl so a
+  // participant who joins after drawing has already happened sees the
+  // existing canvas instead of a blank one. Any active member may read
+  // it (RoomMemberGuard), same access level as listParticipants above.
+  @UseGuards(RoomMemberGuard)
+  @Get(':id/whiteboard/strokes')
+  listWhiteboardStrokes(@Param('id') id: string) {
+    return this.rooms.listWhiteboardStrokes(id);
+  }
+
+  // Persists the stroke (for future late joiners); the client also
+  // broadcasts it over the LiveKit data channel itself so already-
+  // connected participants see it live without polling — see
+  // WhiteboardControl.tsx. "Everyone can draw" (FEATURES.md's default
+  // for a collaborative whiteboard), so this is RoomMemberGuard, not
+  // RoomHostGuard.
+  @UseGuards(RoomMemberGuard)
+  @Post(':id/whiteboard/strokes')
+  addWhiteboardStroke(
+    @Param('id') id: string,
+    @CurrentUser() user: { userId: string },
+    @Body() dto: CreateWhiteboardStrokeDto,
+  ) {
+    return this.rooms.addWhiteboardStroke(id, user.userId, dto);
+  }
+
+  // Undoes the CALLER's own most recent stroke only — the target stroke
+  // is looked up server-side by authorId, never accepted as a client-
+  // supplied id, so this can't be used to undo someone else's drawing.
+  @UseGuards(RoomMemberGuard)
+  @Delete(':id/whiteboard/strokes/last')
+  @HttpCode(HttpStatus.OK)
+  undoLastWhiteboardStroke(
+    @Param('id') id: string,
+    @CurrentUser() user: { userId: string },
+  ) {
+    return this.rooms.undoLastWhiteboardStroke(id, user.userId);
+  }
+
+  // Host-only, unlike the two routes above — clears every participant's
+  // strokes at once, a meaningfully more destructive action than undoing
+  // your own last one. Same RoomHostGuard as lock/mute/remove.
+  @UseGuards(RoomHostGuard)
+  @Delete(':id/whiteboard')
+  @HttpCode(HttpStatus.OK)
+  clearWhiteboard(@Param('id') id: string) {
+    return this.rooms.clearWhiteboard(id);
   }
 }

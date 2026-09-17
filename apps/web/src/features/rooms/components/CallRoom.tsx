@@ -14,6 +14,7 @@ import { PictureInPictureControl } from "./PictureInPictureControl";
 import { ReactionsControl } from "./ReactionsControl";
 import { RaiseHandControl } from "./RaiseHandControl";
 import { PollControl } from "./PollControl";
+import { WhiteboardControl } from "./WhiteboardControl";
 import { WaitingRoomHostPanel } from "./WaitingRoomHostPanel";
 
 // @livekit/track-processors pulls in MediaPipe's WASM segmentation model
@@ -219,30 +220,25 @@ export function CallRoom({ roomId, liveKitUrl, liveKitToken, initialRole, e2eeKe
           — anyone can raise their own hand, not just the host; canManage
           is only used inside it to decide whether to show the "lower
           someone else's hand" action, extended to co-hosts the same way
-          as the panels above. PictureInPictureControl is the same
-          not-dynamic-imported case again: it only touches the standard
-          browser Picture-in-Picture/DOM APIs at click time, no
-          third-party WASM/worker import cost to defer, and it's a
-          personal viewing preference like the two effects controls
-          above, not a call-wide action, so it renders for everyone. */}
+          as the panels above. PictureInPictureControl, PollControl, and
+          WhiteboardControl are all the same not-dynamic-imported shape
+          again: none of them have a browser-only import-time dependency
+          the way the WASM/worker-based controls above do (a plain
+          <canvas>, useDataChannel, and the standard Picture-in-Picture/
+          DOM APIs respectively), so none need ssr:false. PollControl and
+          WhiteboardControl both gate their more destructive actions
+          (create/close a poll; clear the canvas) on strict isHost rather
+          than canManage — extending either to co-hosts would need their
+          own backend guards changed too, deliberately left as a separate
+          follow-up rather than a drive-by change here. See FEATURES.md's
+          Research notes for each feature's own late-joiner design. */}
       <BackgroundEffectsControl />
       <NoiseCancellationControl />
       <ReactionsControl />
       <RaiseHandControl roomId={roomId} canManage={canManage} />
       <PictureInPictureControl />
-      {/* Rendered for every participant, not just the host — a non-host
-          still needs to see and vote on an active poll, they just don't
-          get the create/close affordances (gated inside the component via
-          isHost — strict, not canManage, since PollsController's
-          create/close endpoints are still RoomHostGuard-only; extending
-          poll creation to co-hosts would need that backend guard changed
-          too, deliberately left as a separate follow-up rather than a
-          drive-by change here). Unlike the host-only panels above,
-          PollControl mounts for everyone so a late joiner's own REST
-          fetch-on-mount actually runs — see PollControl's own comment and
-          FEATURES.md's Research notes for the late-joiner design
-          writeup. */}
       <PollControl roomId={roomId} isHost={isHost} />
+      <WhiteboardControl roomId={roomId} isHost={isHost} />
     </LiveKitRoom>
   );
 }

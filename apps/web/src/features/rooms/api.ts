@@ -299,3 +299,68 @@ export interface MeetingAnalytics {
 export function getMeetingAnalytics(roomId: string, accessToken: string) {
   return apiFetch<MeetingAnalytics>(`/rooms/${roomId}/analytics`, { accessToken });
 }
+
+// Normalized 0-1 coordinates (fraction of the canvas's own width/height),
+// not raw pixels — a stroke drawn on one participant's canvas must line
+// up the same way on every other participant's canvas regardless of
+// their own window/canvas size. See WhiteboardControl.tsx.
+export interface WhiteboardPoint {
+  x: number;
+  y: number;
+}
+
+export interface WhiteboardStroke {
+  id: string;
+  points: WhiteboardPoint[];
+  color: string;
+  width: number;
+  authorId: string;
+  createdAt: string;
+}
+
+// Fetched on mount by WhiteboardControl — the late-joiner path. A
+// participant who joins after strokes have already been drawn gets the
+// existing canvas from here rather than from LiveKit (which only ever
+// syncs live events to already-connected participants going forward, see
+// FEATURES.md's Research notes). Any active member may call this — same
+// access level as listParticipants.
+export function listWhiteboardStrokes(roomId: string, accessToken: string) {
+  return apiFetch<WhiteboardStroke[]>(`/rooms/${roomId}/whiteboard/strokes`, { accessToken });
+}
+
+// Persists the stroke so a future late joiner can fetch it via
+// listWhiteboardStrokes above. The caller is responsible for ALSO
+// broadcasting it over the LiveKit data channel so already-connected
+// participants see it live without polling this endpoint — see
+// WhiteboardControl.tsx. Any active member may draw (everyone-can-draw
+// is this feature's default), not just the host.
+export function addWhiteboardStroke(
+  roomId: string,
+  input: { points: WhiteboardPoint[]; color: string; width?: number },
+  accessToken: string,
+) {
+  return apiFetch<WhiteboardStroke>(`/rooms/${roomId}/whiteboard/strokes`, {
+    method: "POST",
+    body: input,
+    accessToken,
+  });
+}
+
+// Undoes the CALLING user's own most recent stroke only — the backend
+// looks the stroke up by the caller's own identity, never a client-
+// supplied stroke id, so this can't undo someone else's drawing.
+export function undoLastWhiteboardStroke(roomId: string, accessToken: string) {
+  return apiFetch<WhiteboardStroke>(`/rooms/${roomId}/whiteboard/strokes/last`, {
+    method: "DELETE",
+    accessToken,
+  });
+}
+
+// Host-only — clears every participant's strokes at once, a meaningfully
+// more destructive action than undoing your own last one (see
+// RoomsService.clearWhiteboard). Same BOLA note as the other host
+// actions: the backend re-verifies at the DB level (RoomHostGuard), so
+// this is safe to expose to any signed-in user.
+export function clearWhiteboard(roomId: string, accessToken: string) {
+  return apiFetch<void>(`/rooms/${roomId}/whiteboard`, { method: "DELETE", accessToken });
+}
