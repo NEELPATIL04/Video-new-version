@@ -25,12 +25,20 @@ export interface Room {
   e2eeEnabled: boolean;
 }
 
-export interface WaitingParticipant {
+// Shared shape for both the waiting-room list and the full active-
+// participant list below — a waiting participant IS a participant, just
+// one whose admittedAt hasn't been set yet.
+export interface Participant {
   id: string;
   // The actual user id — this, not the participant row's own `id`, is
   // what the admit/deny endpoints below take as :userId.
   userId: string;
-  role: "host" | "participant" | "viewer";
+  // "cohost" — a host-appointed participant with the same call-control/
+  // queue-management privileges as the host (mute, remove, admit, deny,
+  // lock/unlock, lower-hand), but never room-lifecycle powers or the
+  // ability to appoint/revoke other co-hosts. See FEATURES.md's Research
+  // notes.
+  role: "host" | "cohost" | "participant" | "viewer";
   joinedAt: string;
   user: { name: string };
 }
@@ -40,10 +48,10 @@ export interface WaitingParticipant {
 // allows reading liveKitToken once it's been narrowed to "admitted", which
 // mirrors the backend never issuing one until admittedAt is actually set.
 export type JoinRoomResponse =
-  | { status: "waiting"; participant: WaitingParticipant }
+  | { status: "waiting"; participant: Participant }
   | {
       status: "admitted";
-      participant: WaitingParticipant;
+      participant: Participant;
       liveKitUrl: string;
       liveKitToken: string;
       // See Room.e2eeEnabled above — lets the call page tell "this room
@@ -94,7 +102,17 @@ export function getJoinStatus(id: string, accessToken: string) {
 // re-verifies at the DB level, so exposing these to any signed-in user is
 // safe.
 export function listWaitingParticipants(roomId: string, accessToken: string) {
-  return apiFetch<WaitingParticipant[]>(`/rooms/${roomId}/waiting`, { accessToken });
+  return apiFetch<Participant[]>(`/rooms/${roomId}/waiting`, { accessToken });
+}
+
+// Member-only (RoomMemberGuard) — every currently-active participant of
+// this room, including their DB-backed role. Used by CoHostControl: role
+// is authorization-facing state (it directly gates backend endpoints via
+// RoomHostOrCoHostGuard), so it lives in Postgres, not LiveKit's live
+// participant metadata the way a raised hand does — useParticipants()
+// has no concept of our RoomRole at all, only this endpoint does.
+export function listParticipants(roomId: string, accessToken: string) {
+  return apiFetch<Participant[]>(`/rooms/${roomId}/participants`, { accessToken });
 }
 
 export function admitParticipant(roomId: string, targetUserId: string, accessToken: string) {
@@ -157,4 +175,22 @@ export function lockRoom(id: string, accessToken: string) {
 
 export function unlockRoom(id: string, accessToken: string) {
   return apiFetch<Room>(`/rooms/${id}/unlock`, { method: "POST", accessToken });
+}
+
+// Owner-only (not exposed to a co-host, even though co-hosts can call
+// mute/remove/admit/deny/lock above) — the backend enforces this with a
+// separate, stricter guard (RoomHostGuard, not RoomHostOrCoHostGuard) so
+// a co-host can never appoint a rival or demote the real host.
+export function promoteToCoHost(roomId: string, targetUserId: string, accessToken: string) {
+  return apiFetch<void>(`/rooms/${roomId}/participants/${targetUserId}/promote`, {
+    method: "POST",
+    accessToken,
+  });
+}
+
+export function demoteCoHost(roomId: string, targetUserId: string, accessToken: string) {
+  return apiFetch<void>(`/rooms/${roomId}/participants/${targetUserId}/demote`, {
+    method: "POST",
+    accessToken,
+  });
 }

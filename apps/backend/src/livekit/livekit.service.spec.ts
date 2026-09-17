@@ -87,6 +87,21 @@ describe('LiveKitService', () => {
     expect(claims.video?.canSubscribe).toBe(true);
   });
 
+  it('grants a co-host roomAdmin but never roomRecord (recording stays owner-only)', async () => {
+    const jwt = await service.createAccessToken({
+      identity: 'cohost-1',
+      name: 'Co-Host',
+      roomId: 'room-1',
+      role: 'cohost',
+    });
+
+    const claims = await decode(jwt);
+    expect(claims.video?.roomAdmin).toBe(true);
+    expect(claims.video?.roomRecord).toBeFalsy();
+    expect(claims.video?.canPublish).toBe(true);
+    expect(claims.video?.canSubscribe).toBe(true);
+  });
+
   it('grants a participant publish+subscribe but never admin/record', async () => {
     const jwt = await service.createAccessToken({
       identity: 'user-2',

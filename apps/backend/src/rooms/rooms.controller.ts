@@ -16,6 +16,7 @@ import { CreateRoomDto } from './dto/create-room.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RoomHostGuard } from './guards/room-host.guard';
+import { RoomHostOrCoHostGuard } from './guards/room-host-or-cohost.guard';
 import { RoomMemberGuard } from './guards/room-member.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
@@ -80,19 +81,19 @@ export class RoomsController {
     return this.rooms.endRoom(id);
   }
 
-  // Host-only. Blocks brand-new joiners in joinRoom (see the service's own
-  // comment on why it reuses the exact same "existing member" check as the
-  // capacity gate) — never affects anyone already admitted, including the
-  // host. Returns the updated room so the client can reflect the new
-  // locked state without a second fetch.
-  @UseGuards(RoomHostGuard)
+  // Host-or-co-host. Blocks brand-new joiners in joinRoom (see the
+  // service's own comment on why it reuses the exact same "existing
+  // member" check as the capacity gate) — never affects anyone already
+  // admitted, including the host. Returns the updated room so the client
+  // can reflect the new locked state without a second fetch.
+  @UseGuards(RoomHostOrCoHostGuard)
   @Post(':id/lock')
   @HttpCode(HttpStatus.OK)
   lock(@Param('id') id: string) {
     return this.rooms.lockRoom(id);
   }
 
-  @UseGuards(RoomHostGuard)
+  @UseGuards(RoomHostOrCoHostGuard)
   @Post(':id/unlock')
   @HttpCode(HttpStatus.OK)
   unlock(@Param('id') id: string) {
@@ -120,14 +121,14 @@ export class RoomsController {
     return this.rooms.getParticipantStatus(id, user.userId);
   }
 
-  // Host-only: who's currently waiting to be let in.
-  @UseGuards(RoomHostGuard)
+  // Host-or-co-host: who's currently waiting to be let in.
+  @UseGuards(RoomHostOrCoHostGuard)
   @Get(':id/waiting')
   listWaiting(@Param('id') id: string) {
     return this.rooms.listWaitingParticipants(id);
   }
 
-  @UseGuards(RoomHostGuard)
+  @UseGuards(RoomHostOrCoHostGuard)
   @Post(':id/waiting/:userId/admit')
   @HttpCode(HttpStatus.OK)
   admitParticipant(
@@ -138,7 +139,7 @@ export class RoomsController {
     return this.rooms.admitParticipant(id, user.userId, userId);
   }
 
-  @UseGuards(RoomHostGuard)
+  @UseGuards(RoomHostOrCoHostGuard)
   @Post(':id/waiting/:userId/deny')
   @HttpCode(HttpStatus.OK)
   denyParticipant(
@@ -162,11 +163,11 @@ export class RoomsController {
     return this.rooms.listActiveParticipants(id);
   }
 
-  // Host-only admin actions. RoomHostGuard re-verifies ownership at the DB
-  // level per request (never trusts a client-side "I'm the host" claim);
-  // RoomsService additionally blocks targeting an inactive/non-existent
-  // participant or the host themselves.
-  @UseGuards(RoomHostGuard)
+  // Host-or-co-host admin actions. RoomHostOrCoHostGuard re-verifies at the
+  // DB level per request (never trusts a client-side claim); RoomsService
+  // additionally blocks targeting an inactive/non-existent participant or
+  // the caller themselves.
+  @UseGuards(RoomHostOrCoHostGuard)
   @Post(':id/participants/:userId/mute')
   @HttpCode(HttpStatus.OK)
   muteParticipant(
@@ -177,7 +178,7 @@ export class RoomsController {
     return this.rooms.muteParticipant(id, user.userId, userId);
   }
 
-  @UseGuards(RoomHostGuard)
+  @UseGuards(RoomHostOrCoHostGuard)
   @Post(':id/participants/:userId/remove')
   @HttpCode(HttpStatus.OK)
   removeParticipant(
@@ -188,12 +189,13 @@ export class RoomsController {
     return this.rooms.removeParticipant(id, user.userId, userId);
   }
 
-  // Host lowering ANOTHER participant's hand (queue management). A
-  // participant lowering their OWN hand never calls this — that happens
-  // directly client-side via localParticipant.setMetadata(), which
-  // LiveKit restricts to the caller's own identity. Same RoomHostGuard +
-  // DB-level non-self-target check as mute/remove above.
-  @UseGuards(RoomHostGuard)
+  // Host or co-host lowering ANOTHER participant's hand (queue
+  // management). A participant lowering their OWN hand never calls this —
+  // that happens directly client-side via localParticipant.setMetadata(),
+  // which LiveKit restricts to the caller's own identity. Same
+  // RoomHostOrCoHostGuard + DB-level non-self-target check as mute/remove
+  // above.
+  @UseGuards(RoomHostOrCoHostGuard)
   @Post(':id/participants/:userId/lower-hand')
   @HttpCode(HttpStatus.OK)
   lowerParticipantHand(
@@ -202,5 +204,34 @@ export class RoomsController {
     @CurrentUser() user: { userId: string },
   ) {
     return this.rooms.lowerParticipantHand(id, user.userId, userId);
+  }
+
+  // Owner-only (RoomHostGuard, strict Room.hostId check — NOT
+  // RoomHostOrCoHostGuard). A co-host promoting a rival co-host or
+  // demoting the real host would be a real privilege-escalation bug, so
+  // appointing/revoking co-host status stays with the true owner, same as
+  // update/cancel/end above. Reuses assertActiveNonSelfParticipant — the
+  // target must be a genuinely active participant of this room, and the
+  // host can't target themselves (they're already the host).
+  @UseGuards(RoomHostGuard)
+  @Post(':id/participants/:userId/promote')
+  @HttpCode(HttpStatus.OK)
+  promoteToCoHost(
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+    @CurrentUser() user: { userId: string },
+  ) {
+    return this.rooms.promoteToCoHost(id, user.userId, userId);
+  }
+
+  @UseGuards(RoomHostGuard)
+  @Post(':id/participants/:userId/demote')
+  @HttpCode(HttpStatus.OK)
+  demoteCoHost(
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+    @CurrentUser() user: { userId: string },
+  ) {
+    return this.rooms.demoteCoHost(id, user.userId, userId);
   }
 }

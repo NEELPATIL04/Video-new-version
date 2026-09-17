@@ -7,7 +7,11 @@ import { useAuthStore } from "@/features/auth/store";
 
 interface RaiseHandControlProps {
   roomId: string;
-  isHost: boolean;
+  // True for the host AND a co-host — either can lower someone else's
+  // hand (RoomHostOrCoHostGuard backs the lower-hand endpoint). Named
+  // canManage rather than isHost since it's no longer strictly "are you
+  // THE host" — see FEATURES.md's Research notes on Co-host.
+  canManage: boolean;
 }
 
 interface HandMetadata {
@@ -45,7 +49,7 @@ function isHandRaised(metadata?: string): boolean {
 // queue-management action) can't go through that same call, so it's a
 // backend endpoint instead (POST .../lower-hand), guarded the same
 // assertActiveNonSelfParticipant way as mute/remove.
-export function RaiseHandControl({ roomId, isHost }: RaiseHandControlProps) {
+export function RaiseHandControl({ roomId, canManage }: RaiseHandControlProps) {
   const accessToken = useAuthStore((s) => s.accessToken);
   const { localParticipant } = useLocalParticipant();
   const participants = useParticipants();
@@ -102,7 +106,7 @@ export function RaiseHandControl({ roomId, isHost }: RaiseHandControlProps) {
             {raisedHands.map((p) => (
               <li key={p.identity} className="flex items-center justify-between gap-2">
                 <span className="truncate">✋ {p.isLocal ? "You" : p.name ?? p.identity}</span>
-                {isHost && !p.isLocal && (
+                {canManage && !p.isLocal && (
                   <button
                     type="button"
                     onClick={() => handleLowerOther(p.identity)}

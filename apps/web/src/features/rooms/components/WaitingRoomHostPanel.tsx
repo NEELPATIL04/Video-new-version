@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { admitParticipant, denyParticipant, listWaitingParticipants, type WaitingParticipant } from "../api";
+import { admitParticipant, denyParticipant, listWaitingParticipants, type Participant } from "../api";
 import { useAuthStore } from "@/features/auth/store";
 
 interface WaitingRoomHostPanelProps {
@@ -14,7 +14,7 @@ interface WaitingRoomHostPanelProps {
 // signal to read them from; the DB is the only source of truth here.
 export function WaitingRoomHostPanel({ roomId }: WaitingRoomHostPanelProps) {
   const accessToken = useAuthStore((s) => s.accessToken);
-  const [waiting, setWaiting] = useState<WaitingParticipant[]>([]);
+  const [waiting, setWaiting] = useState<Participant[]>([]);
   const [pendingUserId, setPendingUserId] = useState<string | null>(null);
 
   useEffect(() => {

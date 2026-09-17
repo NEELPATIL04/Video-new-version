@@ -435,6 +435,29 @@ export class RoomsService {
     return room?.hostId === userId;
   }
 
+  // Broader than isHost above: true for the real owner OR an active
+  // co-host. Deliberately a SEPARATE check, not a change to isHost's own
+  // meaning — RoomHostGuard (backed by isHost) still gates room-lifecycle
+  // actions (update/cancel/end) and appointing/revoking co-hosts
+  // themselves, strictly owner-only. This one backs RoomHostOrCoHostGuard,
+  // used only for call-control/queue-management actions (mute, remove,
+  // admit, deny, lock, unlock, lower-hand) where a co-host is meant to
+  // have the same privileges as the host. See FEATURES.md's Research
+  // notes for why the two guards are kept apart rather than loosening
+  // RoomHostGuard itself.
+  async isHostOrCoHost(roomId: string, userId: string): Promise<boolean> {
+    if (await this.isHost(roomId, userId)) return true;
+    const participant = await this.prisma.participant.findUnique({
+      where: { roomId_userId: { roomId, userId } },
+      select: { role: true, leftAt: true },
+    });
+    return (
+      !!participant &&
+      participant.leftAt === null &&
+      participant.role === 'cohost'
+    );
+  }
+
   async isMember(roomId: string, userId: string): Promise<boolean> {
     if (await this.isHost(roomId, userId)) return true;
     const participant = await this.prisma.participant.findUnique({
@@ -547,5 +570,58 @@ export class RoomsService {
     await this.runLiveKitAction(() =>
       this.liveKit.setHandRaised(roomId, targetUserId, false),
     );
+  }
+
+  // Owner-only (RoomHostGuard at the controller level — never
+  // RoomHostOrCoHostGuard, so a co-host can't appoint a rival). Reuses the
+  // same assertActiveNonSelfParticipant check as mute/remove/lower-hand:
+  // the target must be a genuinely active participant of this room, and
+  // the host can't target themselves. Promoting someone already a
+  // co-host is a harmless no-op rather than an error — idempotent is
+  // simpler than adding a "already a co-host" error path nobody needs.
+  //
+  // Only Participant.role changes — no LiveKit token is reissued here,
+  // and that's fine: mute/remove/admit/deny/lock/lower-hand are all
+  // backend-mediated RoomServiceClient calls (the backend's own API
+  // key/secret, not the caller's personal LiveKit token), gated by
+  // RoomHostOrCoHostGuard's DB-level check — so a promotion takes effect
+  // immediately for every action that actually matters, with no
+  // reconnect needed. The token's own roomAdmin bit only catches up on
+  // the co-host's next reconnect, but nothing in this app reads that bit
+  // client-side today (see LiveKitService.createAccessToken).
+  async promoteToCoHost(
+    roomId: string,
+    hostId: string,
+    targetUserId: string,
+  ): Promise<void> {
+    const participant = await this.assertActiveNonSelfParticipant(
+      roomId,
+      hostId,
+      targetUserId,
+    );
+    await this.prisma.participant.update({
+      where: { id: participant.id },
+      data: { role: 'cohost' },
+    });
+  }
+
+  // Demoting someone who isn't currently a co-host is likewise a harmless
+  // no-op — always resolves to 'participant' regardless of their prior
+  // role (viewer demotion isn't a real scenario since joinRoom never
+  // assigns 'viewer' today, but this stays correct either way).
+  async demoteCoHost(
+    roomId: string,
+    hostId: string,
+    targetUserId: string,
+  ): Promise<void> {
+    const participant = await this.assertActiveNonSelfParticipant(
+      roomId,
+      hostId,
+      targetUserId,
+    );
+    await this.prisma.participant.update({
+      where: { id: participant.id },
+      data: { role: 'participant' },
+    });
   }
 }
