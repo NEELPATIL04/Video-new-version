@@ -50,7 +50,7 @@ shipped and stable, per the tier-order rule.
 | Polls & Q&A                                                                                                                | v2  |
 | Collaborative whiteboard/annotation (in-app: blank canvas + draw-on-shared-screen, inside our own video call UI)           | v2  |
 | Meeting lock — **done**, `Room.locked` + host-only lock/unlock endpoints — see Research notes                              | v2  |
-| Co-host / multiple hosts                                                                                                   | v2  |
+| Co-host / multiple hosts — **done**, `RoomRole.cohost` + `RoomHostOrCoHostGuard` — see Research notes                      | v2  |
 | Layout: grid view — **already done for free**, `VideoConference`'s default `GridLayout` — see Research notes               | v2  |
 | Layout: speaker view — **already done for free**, `VideoConference` auto-focuses a pinned/screen-shared track              | v2  |
 | Layout: gallery view — **already done for free**, same `GridLayout` as grid view above (paginated)                         | v2  |
@@ -124,7 +124,7 @@ are the user's to make, not something to default into.
 | Calendar integration (real OAuth sync) | v1         | The lightweight add-to-calendar links shipped instead (Tier 1, done). Full Google Calendar API / Microsoft Graph sync needs separate OAuth app registrations per provider and, at scale, Google's own security verification review — see Research notes |
 | Email/push notifications & reminders   | v1         | Blocked on an email provider decision (managed like Resend/SES vs. self-hosted Postal, which needs a domain with DNS control) — deliberately not built against a stub                                                                                   |
 | Mobile app (iOS/Android)               | v1         | A separate React Native codebase (per TECH_STACK.md), not an extension of the web app                                                                                                                                                                   |
-| Recording sharing (permissioned link)  | v2         | Meaningless without recording itself, which is already deferred above on the same LiveKit Egress + storage backend decision — moved here alongside it rather than left looking independently buildable                                                 |
+| Recording sharing (permissioned link)  | v2         | Meaningless without recording itself, which is already deferred above on the same LiveKit Egress + storage backend decision — moved here alongside it rather than left looking independently buildable                                                  |
 | In-chat file sharing                   | v2         | Needs a storage backend decision (S3-compatible bucket vs. self-hosted, upload size limits, virus scanning) — the same class of infra decision as cloud recording above, not a code gap                                                                 |
 
 ---
@@ -438,6 +438,60 @@ not assuming from the package's docs. It does, for four of them:
 None of these needed a single line of new code — they were already shipping
 the moment `VideoConference` was wired in for Tier 1. Marked done in the
 table above rather than left looking unbuilt.
+
+### Co-host / multiple hosts — why this stays a DB-backed role, not LiveKit metadata, and why it needs two separate guards
+
+Unlike raised-hand state, a participant's role directly gates backend
+authorization — `RoomHostGuard` and friends re-verify at the DB level on
+every request (`DEV_STANDARDS.md` §6) — so it has to live on the DB's own
+`Participant.role` column, not in LiveKit's live room state the way a
+raised hand does. Extending `RoomRole` with a new `cohost` value keeps this
+on the exact same column already used for `host`/`participant`/`viewer`,
+rather than inventing a parallel field or reaching for participant
+metadata (which would also mean a read-modify-write merge with the
+already-stored `handRaised` field — a risk flagged when raise-hand was
+built, avoided entirely here by keeping role out of metadata).
+
+The one design decision worth writing down: **not every `RoomHostGuard`-
+protected action extends to a co-host.** Room-lifecycle actions (`update`,
+`cancel`, `end`) and appointing/revoking co-hosts themselves stay strictly
+owner-only, checked against `Room.hostId` exactly (unchanged `RoomHostGuard`)
+— a co-host promoting a rival co-host, demoting the real host, or renaming/
+ending the meeting outright would be a real privilege-escalation bug, not a
+feature. Call-control and queue-management actions (mute, remove, admit,
+deny, lock, unlock, lower-hand) extend to co-hosts via a new, separate
+`RoomHostOrCoHostGuard` — a deliberate two-guard split rather than loosening
+`RoomHostGuard` itself, so the two privilege levels can never accidentally
+drift into each other through one shared check. Verified live against the
+real backend, not just in the UI: a plain participant is refused every
+call-control action (403); once promoted, the exact same identity can lock
+the room, but is still refused promoting a third participant, demoting the
+real host, ending the room, or renaming it (403 on all four); demoting them
+again immediately revokes the call-control access.
+
+`LiveKitService.createAccessToken`'s `roomAdmin` grant now also covers
+`cohost` (they perform genuinely admin-shaped actions), but `roomRecord`
+stays host-only — recording isn't built yet, and there's no reason to
+pre-grant it ahead of that feature's own access-control design. Neither
+grant is actually consumed by any client-side code in this app today: every
+host/co-host action goes through the backend's own `RoomServiceClient`
+(the backend's API key/secret, not the caller's personal token), so a
+promotion takes effect immediately for everything that matters, with no
+reconnect needed — the token's own `roomAdmin` bit only catches up on the
+co-host's next reconnect, which is fine precisely because nothing reads it
+client-side.
+
+Because a promotion/demotion has to visibly change what an
+**already-connected** participant sees mid-call, `CallRoom` polls the
+existing `GET /rooms/:id/join-status` endpoint every 5 seconds while
+connected — the same endpoint `WaitingRoom` already polls while pending —
+rather than inventing a new endpoint or a LiveKit data-channel signal.
+Verified end-to-end with two real browser contexts: promoting a
+currently-connected participant makes host-shaped panels (`HostControls`,
+`MeetingLockControl`) appear on THEIR page without any refresh or
+reconnect, and demoting removes them the same way; the co-host management
+panel itself (`CoHostControl`) stays invisible to the co-host throughout,
+confirming appoint/revoke power never leaks past the true owner.
 
 ## Open items
 

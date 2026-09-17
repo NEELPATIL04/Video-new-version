@@ -115,7 +115,7 @@ export default function RoomCallPage() {
       roomId={id}
       liveKitUrl={joinResult!.liveKitUrl}
       liveKitToken={joinResult!.liveKitToken}
-      isHost={joinResult!.participant.role === "host"}
+      initialRole={joinResult!.participant.role}
       e2eeKey={joinResult!.e2eeEnabled ? e2eeKey! : undefined}
     />
   );

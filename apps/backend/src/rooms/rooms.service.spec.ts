@@ -832,6 +832,128 @@ describe('RoomsService', () => {
     });
   });
 
+  describe('isHostOrCoHost', () => {
+    it('is true for the real host without needing a Participant row lookup', async () => {
+      prisma.room.findUnique.mockResolvedValue({ hostId: 'host-1' });
+      expect(await service.isHostOrCoHost('room-1', 'host-1')).toBe(true);
+      expect(prisma.participant.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('is true for an active participant whose role is cohost', async () => {
+      prisma.room.findUnique.mockResolvedValue({ hostId: 'host-1' });
+      prisma.participant.findUnique.mockResolvedValue({
+        role: 'cohost',
+        leftAt: null,
+      });
+      expect(await service.isHostOrCoHost('room-1', 'user-2')).toBe(true);
+    });
+
+    it('is false for a plain participant (never promoted)', async () => {
+      prisma.room.findUnique.mockResolvedValue({ hostId: 'host-1' });
+      prisma.participant.findUnique.mockResolvedValue({
+        role: 'participant',
+        leftAt: null,
+      });
+      expect(await service.isHostOrCoHost('room-1', 'user-2')).toBe(false);
+    });
+
+    it('is false for a co-host who has already left the room', async () => {
+      prisma.room.findUnique.mockResolvedValue({ hostId: 'host-1' });
+      prisma.participant.findUnique.mockResolvedValue({
+        role: 'cohost',
+        leftAt: new Date(),
+      });
+      expect(await service.isHostOrCoHost('room-1', 'user-2')).toBe(false);
+    });
+
+    it('is false for a stranger with no participant row at all', async () => {
+      prisma.room.findUnique.mockResolvedValue({ hostId: 'host-1' });
+      prisma.participant.findUnique.mockResolvedValue(null);
+      expect(await service.isHostOrCoHost('room-1', 'stranger')).toBe(false);
+    });
+  });
+
+  describe('promoteToCoHost / demoteCoHost', () => {
+    it('refuses a host promoting themselves', async () => {
+      await expect(
+        service.promoteToCoHost('room-1', 'host-1', 'host-1'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.participant.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses to promote someone who is not an active participant', async () => {
+      prisma.participant.findUnique.mockResolvedValue(null);
+      await expect(
+        service.promoteToCoHost('room-1', 'host-1', 'stranger'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(prisma.participant.update).not.toHaveBeenCalled();
+    });
+
+    it('sets an active participant’s role to cohost', async () => {
+      prisma.participant.findUnique.mockResolvedValue({
+        id: 'p-2',
+        leftAt: null,
+      });
+
+      await service.promoteToCoHost('room-1', 'host-1', 'user-2');
+
+      expect(prisma.participant.update).toHaveBeenCalledWith({
+        where: { id: 'p-2' },
+        data: { role: 'cohost' },
+      });
+    });
+
+    it('promoting an already-cohost participant is a harmless no-op, not an error', async () => {
+      prisma.participant.findUnique.mockResolvedValue({
+        id: 'p-2',
+        role: 'cohost',
+        leftAt: null,
+      });
+
+      await expect(
+        service.promoteToCoHost('room-1', 'host-1', 'user-2'),
+      ).resolves.toBeUndefined();
+      expect(prisma.participant.update).toHaveBeenCalledWith({
+        where: { id: 'p-2' },
+        data: { role: 'cohost' },
+      });
+    });
+
+    it('refuses a host demoting themselves', async () => {
+      await expect(
+        service.demoteCoHost('room-1', 'host-1', 'host-1'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.participant.update).not.toHaveBeenCalled();
+    });
+
+    it('sets a co-host’s role back to participant', async () => {
+      prisma.participant.findUnique.mockResolvedValue({
+        id: 'p-2',
+        role: 'cohost',
+        leftAt: null,
+      });
+
+      await service.demoteCoHost('room-1', 'host-1', 'user-2');
+
+      expect(prisma.participant.update).toHaveBeenCalledWith({
+        where: { id: 'p-2' },
+        data: { role: 'participant' },
+      });
+    });
+
+    it('demoting a participant who was never a cohost is a harmless no-op', async () => {
+      prisma.participant.findUnique.mockResolvedValue({
+        id: 'p-2',
+        role: 'participant',
+        leftAt: null,
+      });
+
+      await expect(
+        service.demoteCoHost('room-1', 'host-1', 'user-2'),
+      ).resolves.toBeUndefined();
+    });
+  });
+
   describe('muteParticipant', () => {
     it('refuses a host muting themselves — never calls LiveKit', async () => {
       await expect(

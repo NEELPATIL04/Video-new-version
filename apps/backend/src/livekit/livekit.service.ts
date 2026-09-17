@@ -69,7 +69,17 @@ export class LiveKitService {
       canPublish: params.role !== 'viewer',
       canSubscribe: true,
       canPublishData: params.role !== 'viewer',
-      roomAdmin: params.role === 'host',
+      // A co-host performs genuinely admin-shaped actions (mute, remove,
+      // admit, deny, lock, lower-hand — see RoomHostOrCoHostGuard), so
+      // they get roomAdmin too. roomRecord stays host-only: recording
+      // isn't built yet, and there's no reason to pre-grant it broadly
+      // ahead of that feature's own access-control design. Neither grant
+      // is actually consumed by any client-side code in this app today —
+      // every one of those actions goes through our OWN backend's
+      // RoomServiceClient (the backend's API key/secret, not the caller's
+      // personal token) — so this is about token correctness/future-
+      // proofing, not something a client SDK call depends on right now.
+      roomAdmin: params.role === 'host' || params.role === 'cohost',
       roomRecord: params.role === 'host',
       // Lets a participant call localParticipant.setMetadata() on
       // themselves client-side (used for raise-hand — see

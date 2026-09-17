@@ -9,6 +9,15 @@ datasource db {
 
 enum RoomRole {
   host
+  // A host-appointed participant who gains call-control/queue-management
+  // privileges (mute, remove, admit, deny, lock/unlock, lower-hand) via
+  // RoomHostOrCoHostGuard, but never room-lifecycle powers (update, cancel,
+  // end) or the ability to appoint/revoke other co-hosts — those stay on
+  // RoomHostGuard, checked strictly against Room.hostId. See FEATURES.md's
+  // Research notes for why this is a DB-backed role (authorization-facing)
+  // rather than LiveKit participant metadata (which raise-hand already
+  // uses for genuinely ephemeral call state).
+  cohost
   participant
   viewer
 }
