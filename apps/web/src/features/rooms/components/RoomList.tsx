@@ -22,6 +22,7 @@ const ScheduledMeetingCalendarLinks = dynamic(
 
 export function RoomList() {
   const accessToken = useAuthStore((s) => s.accessToken);
+  const user = useAuthStore((s) => s.user);
   const [copiedRoomId, setCopiedRoomId] = useState<string | null>(null);
 
   const handleCopyCode = async (roomId: string, code: string) => {
@@ -65,6 +66,18 @@ export function RoomList() {
             >
               {copiedRoomId === room.id ? "Copied" : "Copy"}
             </button>
+            {/* Host-only — the backend re-verifies at the DB level
+                (RoomHostGuard + a second hostId check inside
+                getMeetingAnalytics), so this is just hiding an option
+                that would 403 anyway, not the actual access control.
+                Shown for any status: a scheduled meeting just lands on
+                a "hasn't started yet" state rather than being hidden
+                entirely. */}
+            {room.hostId === user?.id && (
+              <Link href={`/rooms/${room.id}/analytics`} className="underline ml-auto">
+                Analytics
+              </Link>
+            )}
           </div>
           {room.status === "scheduled" && room.scheduledFor && (
             <ScheduledMeetingCalendarLinks
