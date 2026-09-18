@@ -80,7 +80,7 @@ shipped and stable, per the tier-order rule.
 | Integration: Jira                                                                                                                                                                                                      | v3  |
 | Integration: Notion                                                                                                                                                                                                    | v3  |
 | White-labeling / custom branding                                                                                                                                                                                       | v3  |
-| Meeting templates & agendas                                                                                                                                                                                            | v3  |
+| Meeting templates & agendas — **done**, reusable `MeetingTemplate` presets + live per-room `AgendaItem` checklist — see Research notes                                                                                 | v3  |
 | Security: watermarking                                                                                                                                                                                                 | v3  |
 | Security: domain-restricted join                                                                                                                                                                                       | v3  |
 | Security: enforced waiting room policies                                                                                                                                                                               | v3  |
@@ -805,6 +805,78 @@ proven unable to reach the same room's analytics by navigating straight to
 the URL. Only the single-room view was built — a cross-meeting/aggregate-
 over-time dashboard was in scope as a stretch goal but wasn't attempted;
 the single-room view alone was enough work to get fully right and tested.
+
+### Meeting templates & agendas — two independently-lifecycled pieces, not one combined entity
+
+Scoped as two small, cleanly separable pieces rather than one blob, because
+they genuinely have different lifecycles: a `MeetingTemplate` is edited long
+after any room it seeded is gone, while a room's live `AgendaItem` checklist
+diverges from the template immediately after creation (items checked off,
+new ones added ad hoc). Conflating them into one entity would mean
+confusing "reusable preset" with "this call's live state" — the same
+"don't build a hypothetical shared abstraction" reasoning breakout rooms'
+own notes already worked through for why `BreakoutRoom` isn't a
+self-referencing `Room`.
+
+**`MeetingTemplate` is deliberately NOT room-scoped** — it belongs directly
+to a `User` (`hostId`), with no relation to any `Room` row at all, unlike
+every other Tier 2/3 feature so far (Polls, Whiteboard, Breakout Rooms),
+which are all room-scoped. That means none of `RoomHostGuard`/
+`RoomMemberGuard`/`RoomHostOrCoHostGuard` apply — they all answer "is this
+caller allowed to act on THIS room," which isn't the question here.
+Ownership is a plain `template.hostId === userId` check written directly in
+`TemplatesService`, not a new guard class for one module's single call
+site — the same proportionate amount of code `RoomsService` itself already
+uses for its own `hostId` comparisons (e.g. `getMeetingAnalytics`).
+
+**Agenda items live directly in `RoomsController`/`RoomsService`, not a new
+module** — mirroring the precedent Meeting-analytics and Whiteboard already
+set (folded into the existing Rooms module rather than getting their own,
+reserved for genuinely large per-room features like Polls/Breakout-rooms
+that need their own guards/DTOs wired through a dedicated module). Agenda's
+CRUD surface (list/add/toggle/remove) is the same size as Whiteboard's, so
+it gets the same treatment; `TemplatesModule` is the one genuinely new,
+dedicated module, since it's a top-level resource with no Room relation to
+extend.
+
+**Agenda mutations use `RoomHostOrCoHostGuard`, not the stricter
+`RoomHostGuard`** — running the agenda live ("check this off," "add
+something that just came up") is exactly the kind of meeting-management
+action co-host was built to share, consistent with its existing scope on
+mute/remove/lock. Reading the agenda uses `RoomMemberGuard`, same as
+`PollsController`'s `current` endpoint — any admitted participant,
+including a plain viewer, can see it.
+
+**No reorder endpoint in v1** — items keep creation order. The same kind of
+deliberate scope cut as Breakout Rooms skipping host-movement-between-rooms
+or Whiteboard only supporting undo-last: a host who wants a different order
+can delete and re-add, and building drag-and-drop reorder now would be
+speculative given nothing has asked for it yet.
+
+**A real bug only live Playwright testing caught, not the mocked unit
+tests**: `AgendaControl`'s checkbox toggle initially called `setPending(true)`
+_before_ updating local item state, which triggered a React re-render that
+briefly read the OLD (pre-toggle) `item.completed` for the checkbox's
+`checked` prop — visibly forcing the just-clicked checkbox back to
+unchecked for a moment before the real server response landed and it
+re-checked itself. Playwright's `.check()` action correctly refused to
+consider that a legitimate state change and failed the test outright,
+catching a genuine UX flicker a human easily could have missed in casual
+manual testing. Fixed by updating `items` optimistically in the SAME tick
+as `setPending`, so the checkbox's `checked` value never regresses to stale
+data mid-flight; a failed request still rolls back via a real `refresh()`
+rather than trusting the optimistic guess.
+
+Verified with `meeting-templates.spec.ts`, whose core test is the same
+late-joiner shape as Polls/Whiteboard's own: a template's starter agenda is
+confirmed seeded into a brand-new room's `AgendaItem` rows at creation, the
+host live-edits the checklist (add/complete/remove), and a guest who
+registers and joins only AFTER those edits already happened sees the exact
+resulting state via `GET /rooms/:id/agenda`'s fetch-on-mount — not a stale
+or missing view, the scenario a data-channel-only implementation would pass
+in casual testing and then silently fail in production. A non-host/
+non-cohost participant is also confirmed to have no add/delete controls at
+all, not just non-functional ones.
 
 ## Open items
 
