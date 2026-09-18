@@ -15,6 +15,7 @@ import { ReactionsControl } from "./ReactionsControl";
 import { RaiseHandControl } from "./RaiseHandControl";
 import { PollControl } from "./PollControl";
 import { WhiteboardControl } from "./WhiteboardControl";
+import { AgendaControl } from "./AgendaControl";
 import { WaitingRoomHostPanel } from "./WaitingRoomHostPanel";
 import { BreakoutRoomsHostPanel } from "./BreakoutRoomsHostPanel";
 
@@ -281,6 +282,15 @@ export function CallRoom({
       <PictureInPictureControl />
       <PollControl roomId={roomId} isHost={isHost} />
       <WhiteboardControl roomId={roomId} isHost={isHost} />
+      {/* Unlike PollControl/WhiteboardControl above, AgendaControl gates
+          its manage actions (add/toggle/remove) on canManage rather than
+          strict isHost — RoomHostOrCoHostGuard backs those endpoints on
+          the backend, so a co-host has genuine agenda-management rights,
+          not just a UI affordance. top-24 right-4 is free: HostControls
+          uses top-4 right-4, RaiseHandControl/BackgroundEffectsControl use
+          bottom-20 right-4 — confirmed by grepping every floating panel's
+          className in this directory before choosing this position. */}
+      <AgendaControl roomId={roomId} canManage={canManage} />
     </LiveKitRoom>
   );
 }

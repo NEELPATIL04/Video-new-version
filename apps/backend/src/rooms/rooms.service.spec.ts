@@ -39,6 +39,18 @@ describe('RoomsService', () => {
       delete: jest.Mock;
       deleteMany: jest.Mock;
     };
+    meetingTemplate: {
+      findUnique: jest.Mock;
+    };
+    agendaItem: {
+      create: jest.Mock;
+      createMany: jest.Mock;
+      findMany: jest.Mock;
+      findFirst: jest.Mock;
+      update: jest.Mock;
+      delete: jest.Mock;
+      count: jest.Mock;
+    };
     $transaction: jest.Mock;
   };
   let liveKit: {
@@ -87,6 +99,18 @@ describe('RoomsService', () => {
         findFirst: jest.fn(),
         delete: jest.fn(),
         deleteMany: jest.fn(),
+      },
+      meetingTemplate: {
+        findUnique: jest.fn(),
+      },
+      agendaItem: {
+        create: jest.fn(),
+        createMany: jest.fn(),
+        findMany: jest.fn(),
+        findFirst: jest.fn(),
+        update: jest.fn(),
+        delete: jest.fn(),
+        count: jest.fn(),
       },
       $transaction: jest.fn((arg) => {
         // Mirrors Prisma's two $transaction call shapes used in the
@@ -224,6 +248,75 @@ describe('RoomsService', () => {
           joinCode: expect.stringMatching(/^\d{9}$/),
         }),
       });
+    });
+
+    it("seeds AgendaItem rows from the template's agendaItems, in order, inside the same transaction", async () => {
+      prisma.meetingTemplate.findUnique.mockResolvedValue({
+        hostId: 'host-1',
+        agendaItems: ['Kickoff', 'Retro'],
+      });
+      const room = makeRoom();
+      prisma.room.create.mockResolvedValue(room);
+      prisma.participant.create.mockResolvedValue({ id: 'p-1', role: 'host' });
+
+      await service.createRoom('host-1', {
+        name: 'Standup',
+        templateId: 'template-1',
+      });
+
+      expect(prisma.meetingTemplate.findUnique).toHaveBeenCalledWith({
+        where: { id: 'template-1' },
+        select: { hostId: true, agendaItems: true },
+      });
+      expect(prisma.agendaItem.createMany).toHaveBeenCalledWith({
+        data: [
+          { roomId: room.id, title: 'Kickoff', order: 0 },
+          { roomId: room.id, title: 'Retro', order: 1 },
+        ],
+      });
+    });
+
+    it('does not touch agendaItem when the template has an empty agenda', async () => {
+      prisma.meetingTemplate.findUnique.mockResolvedValue({
+        hostId: 'host-1',
+        agendaItems: [],
+      });
+      prisma.room.create.mockResolvedValue(makeRoom());
+      prisma.participant.create.mockResolvedValue({ id: 'p-1', role: 'host' });
+
+      await service.createRoom('host-1', {
+        name: 'Standup',
+        templateId: 'template-1',
+      });
+
+      expect(prisma.agendaItem.createMany).not.toHaveBeenCalled();
+    });
+
+    it('rejects a templateId that does not exist (never silently ignored)', async () => {
+      prisma.meetingTemplate.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.createRoom('host-1', {
+          name: 'Standup',
+          templateId: 'template-x',
+        }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(prisma.room.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects a templateId that belongs to a different host', async () => {
+      prisma.meetingTemplate.findUnique.mockResolvedValue({
+        hostId: 'someone-else',
+        agendaItems: ['Kickoff'],
+      });
+
+      await expect(
+        service.createRoom('host-1', {
+          name: 'Standup',
+          templateId: 'template-1',
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prisma.room.create).not.toHaveBeenCalled();
     });
   });
 
@@ -1460,6 +1553,115 @@ describe('RoomsService', () => {
           NotFoundException,
         );
         expect(prisma.whiteboardStroke.deleteMany).not.toHaveBeenCalled();
+      });
+    });
+  });
+
+  describe('agenda', () => {
+    describe('listAgendaItems', () => {
+      it('returns items for the room ordered by order ascending', async () => {
+        const items = [{ id: 'item-1' }, { id: 'item-2' }];
+        prisma.agendaItem.findMany.mockResolvedValue(items);
+
+        const result = await service.listAgendaItems('room-1');
+
+        expect(prisma.agendaItem.findMany).toHaveBeenCalledWith({
+          where: { roomId: 'room-1' },
+          orderBy: { order: 'asc' },
+        });
+        expect(result).toBe(items);
+      });
+    });
+
+    describe('addAgendaItem', () => {
+      it('appends a new item with order = current count of existing items', async () => {
+        prisma.room.findUnique.mockResolvedValue(makeRoom());
+        prisma.agendaItem.count.mockResolvedValue(2);
+        const created = { id: 'item-3', title: 'New topic', order: 2 };
+        prisma.agendaItem.create.mockResolvedValue(created);
+
+        const result = await service.addAgendaItem('room-1', {
+          title: 'New topic',
+        });
+
+        expect(prisma.agendaItem.count).toHaveBeenCalledWith({
+          where: { roomId: 'room-1' },
+        });
+        expect(prisma.agendaItem.create).toHaveBeenCalledWith({
+          data: { roomId: 'room-1', title: 'New topic', order: 2 },
+        });
+        expect(result).toBe(created);
+      });
+
+      it('404s if the room does not exist', async () => {
+        prisma.room.findUnique.mockResolvedValue(null);
+
+        await expect(
+          service.addAgendaItem('room-x', { title: 'New topic' }),
+        ).rejects.toBeInstanceOf(NotFoundException);
+        expect(prisma.agendaItem.create).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('toggleAgendaItem', () => {
+      it('toggles completed on an item scoped to this room (BOLA: id+roomId both in the query)', async () => {
+        prisma.agendaItem.findFirst.mockResolvedValue({
+          id: 'item-1',
+          roomId: 'room-1',
+        });
+        const updated = { id: 'item-1', completed: true };
+        prisma.agendaItem.update.mockResolvedValue(updated);
+
+        const result = await service.toggleAgendaItem('room-1', 'item-1', {
+          completed: true,
+        });
+
+        expect(prisma.agendaItem.findFirst).toHaveBeenCalledWith({
+          where: { id: 'item-1', roomId: 'room-1' },
+        });
+        expect(prisma.agendaItem.update).toHaveBeenCalledWith({
+          where: { id: 'item-1' },
+          data: { completed: true },
+        });
+        expect(result).toBe(updated);
+      });
+
+      it('404s for an item that does not belong to this room — never falls back to a bare findUnique(id)', async () => {
+        prisma.agendaItem.findFirst.mockResolvedValue(null);
+
+        await expect(
+          service.toggleAgendaItem('room-1', 'item-from-other-room', {
+            completed: true,
+          }),
+        ).rejects.toBeInstanceOf(NotFoundException);
+        expect(prisma.agendaItem.update).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('removeAgendaItem', () => {
+      it('deletes an item scoped to this room (BOLA: id+roomId both in the query)', async () => {
+        prisma.agendaItem.findFirst.mockResolvedValue({
+          id: 'item-1',
+          roomId: 'room-1',
+        });
+
+        await service.removeAgendaItem('room-1', 'item-1');
+
+        expect(prisma.agendaItem.findFirst).toHaveBeenCalledWith({
+          where: { id: 'item-1', roomId: 'room-1' },
+        });
+        expect(prisma.agendaItem.delete).toHaveBeenCalledWith({
+          where: { id: 'item-1' },
+        });
+      });
+
+      it('404s for an item that does not belong to this room', async () => {
+        prisma.agendaItem.findFirst.mockResolvedValue(null);
+
+        await expect(
+          service.removeAgendaItem('room-1', 'item-from-other-room'),
+        ).rejects.toBeInstanceOf(NotFoundException);
+        expect(prisma.agendaItem.delete).not.toHaveBeenCalled();
       });
     });
   });

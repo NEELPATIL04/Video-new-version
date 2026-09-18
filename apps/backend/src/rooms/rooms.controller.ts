@@ -15,6 +15,8 @@ import { RoomsService } from './rooms.service';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
 import { CreateWhiteboardStrokeDto } from './dto/create-whiteboard-stroke.dto';
+import { AddAgendaItemDto } from './dto/add-agenda-item.dto';
+import { ToggleAgendaItemDto } from './dto/toggle-agenda-item.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RoomHostGuard } from './guards/room-host.guard';
 import { RoomHostOrCoHostGuard } from './guards/room-host-or-cohost.guard';
@@ -298,5 +300,39 @@ export class RoomsController {
   @HttpCode(HttpStatus.OK)
   clearWhiteboard(@Param('id') id: string) {
     return this.rooms.clearWhiteboard(id);
+  }
+
+  // Late-joiner path, same shape as listWhiteboardStrokes above. Any
+  // admitted room member (including a plain viewer) can read the current
+  // agenda — RoomMemberGuard, not RoomHostOrCoHostGuard.
+  @UseGuards(RoomMemberGuard)
+  @Get(':id/agenda')
+  listAgenda(@Param('id') id: string) {
+    return this.rooms.listAgendaItems(id);
+  }
+
+  // Host-or-co-host: co-host gets the same agenda-management rights as
+  // host, consistent with its existing scope on mute/remove/lock/etc.
+  @UseGuards(RoomHostOrCoHostGuard)
+  @Post(':id/agenda')
+  addAgendaItem(@Param('id') id: string, @Body() dto: AddAgendaItemDto) {
+    return this.rooms.addAgendaItem(id, dto);
+  }
+
+  @UseGuards(RoomHostOrCoHostGuard)
+  @Patch(':id/agenda/:itemId')
+  toggleAgendaItem(
+    @Param('id') id: string,
+    @Param('itemId') itemId: string,
+    @Body() dto: ToggleAgendaItemDto,
+  ) {
+    return this.rooms.toggleAgendaItem(id, itemId, dto);
+  }
+
+  @UseGuards(RoomHostOrCoHostGuard)
+  @Delete(':id/agenda/:itemId')
+  @HttpCode(HttpStatus.OK)
+  removeAgendaItem(@Param('id') id: string, @Param('itemId') itemId: string) {
+    return this.rooms.removeAgendaItem(id, itemId);
   }
 }

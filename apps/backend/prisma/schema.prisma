@@ -59,6 +59,7 @@ model User {
   createdPolls      Poll[]
   pollVotes         PollVote[]
   whiteboardStrokes WhiteboardStroke[]
+  meetingTemplates  MeetingTemplate[]  @relation("MeetingTemplateHost")
 
   @@map("users")
 }
@@ -125,6 +126,7 @@ model Room {
   polls             Poll[]
   whiteboardStrokes WhiteboardStroke[]
   breakoutRooms     BreakoutRoom[]
+  agendaItems       AgendaItem[]
 
   @@map("rooms")
 }
@@ -306,4 +308,52 @@ model WhiteboardStroke {
 
   @@index([roomId, createdAt])
   @@map("whiteboard_strokes")
+}
+
+// A reusable, user-owned preset that prefills the "create room" form — NOT
+// room-scoped and has no relation to any Room row at all (unlike everything
+// else in this schema, which hangs off a specific meeting). Ownership is
+// checked with a plain `hostId` comparison inside TemplatesService, the
+// same lightweight pattern RoomsService already uses for
+// findRoomByCode/getRoomById-style checks — there's no room-scoped guard to
+// reuse here since this resource isn't room-scoped, so a new dedicated
+// guard class would be one-call-site machinery for no real benefit.
+model MeetingTemplate {
+  id                 String   @id @default(uuid())
+  name               String
+  defaultE2eeEnabled Boolean  @default(false)
+  // The starter agenda as plain titles, not a relation to AgendaItem —
+  // applying a template only ever COPIES these into fresh AgendaItem rows
+  // for a brand-new Room (see RoomsService.createRoom); a template itself
+  // never gets checked off, reordered, or otherwise mutated as "the
+  // agenda" the way a real room's AgendaItem rows are, so it doesn't need
+  // that model's shape (order/completed/roomId).
+  agendaItems        String[]
+  createdAt          DateTime @default(now())
+
+  hostId String
+  host   User   @relation("MeetingTemplateHost", fields: [hostId], references: [id])
+
+  @@map("meeting_templates")
+}
+
+// An ordered, per-room checklist live during a call — host/co-host manage
+// it (add/remove/check off), every participant can view it. Persisted (not
+// LiveKit metadata/data-channel-only) for the same late-joiner reason
+// Polls/Whiteboard already established: a participant who joins mid-call
+// must be able to fetch the CURRENT checklist state via REST on mount, not
+// just replay live broadcasts they weren't connected for. No reorder
+// endpoint in v1 — items keep creation order via `order`, a deliberate
+// scope cut, not an oversight.
+model AgendaItem {
+  id        String   @id @default(uuid())
+  title     String
+  order     Int
+  completed Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  roomId String
+  room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@map("agenda_items")
 }

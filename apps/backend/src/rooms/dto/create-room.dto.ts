@@ -4,6 +4,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsUUID,
   Max,
   MaxLength,
   Min,
@@ -36,4 +37,13 @@ export class CreateRoomDto {
   @IsOptional()
   @IsBoolean()
   e2eeEnabled?: boolean;
+
+  // Optional preset (MeetingTemplate) to seed this room's starter agenda
+  // from. Validated server-side in RoomsService.createRoom — an unknown or
+  // not-owned-by-this-host id fails the whole request rather than being
+  // silently ignored (see TemplatesService for the ownership model this
+  // reuses).
+  @IsOptional()
+  @IsUUID()
+  templateId?: string;
 }
