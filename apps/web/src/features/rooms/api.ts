@@ -67,6 +67,11 @@ export function createRoom(
     scheduledFor?: string;
     maxParticipants?: number;
     e2eeEnabled?: boolean;
+    // Optional MeetingTemplate id to seed this room's starter agenda from
+    // — validated server-side (ownership + existence), never silently
+    // ignored if invalid. Omit entirely (not empty string) when "None" is
+    // selected — see CreateRoomForm.
+    templateId?: string;
   },
   accessToken: string,
 ) {
@@ -436,4 +441,89 @@ export function undoLastWhiteboardStroke(roomId: string, accessToken: string) {
 // this is safe to expose to any signed-in user.
 export function clearWhiteboard(roomId: string, accessToken: string) {
   return apiFetch<void>(`/rooms/${roomId}/whiteboard`, { method: "DELETE", accessToken });
+}
+
+// A reusable, user-owned preset that prefills the "create room" form — NOT
+// room-scoped, no relation to any Room. See TemplateManager.tsx and
+// CreateRoomForm's template-select.
+export interface MeetingTemplate {
+  id: string;
+  name: string;
+  defaultE2eeEnabled: boolean;
+  agendaItems: string[];
+  createdAt: string;
+  hostId: string;
+}
+
+export function createTemplate(
+  input: { name: string; e2eeEnabled?: boolean; agendaItems?: string[] },
+  accessToken: string,
+) {
+  return apiFetch<MeetingTemplate>("/templates", {
+    method: "POST",
+    body: input,
+    accessToken,
+  });
+}
+
+// Only the caller's own templates — top-level /templates, not nested under
+// /rooms, since a template has no relation to any room.
+export function listTemplates(accessToken: string) {
+  return apiFetch<MeetingTemplate[]>("/templates", { accessToken });
+}
+
+export function deleteTemplate(id: string, accessToken: string) {
+  return apiFetch<void>(`/templates/${id}`, { method: "DELETE", accessToken });
+}
+
+// An ordered, per-room checklist live during a call — see AgendaControl.tsx.
+// Persisted (not LiveKit-only) for the same late-joiner reason Polls/
+// Whiteboard already established: a participant who joins mid-call fetches
+// the CURRENT state via REST on mount rather than only ever seeing live
+// broadcasts for events after they connected.
+export interface AgendaItem {
+  id: string;
+  roomId: string;
+  title: string;
+  order: number;
+  completed: boolean;
+  createdAt: string;
+}
+
+// Any active room member (RoomMemberGuard, including a plain viewer) may
+// read the current agenda — fetched on mount by AgendaControl for every
+// participant, the late-joiner path.
+export function listAgenda(roomId: string, accessToken: string) {
+  return apiFetch<AgendaItem[]>(`/rooms/${roomId}/agenda`, { accessToken });
+}
+
+// Host-or-co-host only — the backend re-verifies at the DB level
+// (RoomHostOrCoHostGuard), same BOLA note as the other host-or-cohost
+// actions above, so this is safe to expose to any signed-in user.
+export function addAgendaItem(roomId: string, title: string, accessToken: string) {
+  return apiFetch<AgendaItem>(`/rooms/${roomId}/agenda`, {
+    method: "POST",
+    body: { title },
+    accessToken,
+  });
+}
+
+export function toggleAgendaItem(
+  roomId: string,
+  itemId: string,
+  completed: boolean,
+  accessToken: string,
+) {
+  return apiFetch<AgendaItem>(`/rooms/${roomId}/agenda/${itemId}`, {
+    method: "PATCH",
+    body: { completed },
+    accessToken,
+  });
+}
+
+export function removeAgendaItem(roomId: string, itemId: string, accessToken: string) {
+  return apiFetch<void>(`/rooms/${roomId}/agenda/${itemId}`, {
+    method: "DELETE",
+    accessToken,
+  });
 }

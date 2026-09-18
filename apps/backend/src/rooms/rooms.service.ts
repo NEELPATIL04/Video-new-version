@@ -14,6 +14,8 @@ import {
 import { CreateRoomDto } from './dto/create-room.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
 import { CreateWhiteboardStrokeDto } from './dto/create-whiteboard-stroke.dto';
+import { AddAgendaItemDto } from './dto/add-agenda-item.dto';
+import { ToggleAgendaItemDto } from './dto/toggle-agenda-item.dto';
 
 const DEFAULT_STROKE_WIDTH = 3;
 
@@ -53,11 +55,35 @@ export class RoomsService {
       throw new BadRequestException('scheduledFor must be in the future');
     }
 
+    // Resolved BEFORE the transaction so an invalid/foreign templateId
+    // fails the whole request with a clean 404/403 rather than silently
+    // creating a room with no agenda — the brief is explicit that this
+    // must never be ignored. Ownership is a plain hostId comparison, the
+    // same shape TemplatesService uses for its own delete check; there is
+    // no room yet at this point for a room-scoped guard to check against.
+    let template: { agendaItems: string[] } | null = null;
+    if (dto.templateId) {
+      const found = await this.prisma.meetingTemplate.findUnique({
+        where: { id: dto.templateId },
+        select: { hostId: true, agendaItems: true },
+      });
+      if (!found) {
+        throw new NotFoundException('No template found with that id');
+      }
+      if (found.hostId !== hostId) {
+        throw new ForbiddenException('This template does not belong to you');
+      }
+      template = found;
+    }
+
     const joinCode = await this.generateUniqueJoinCode();
 
     // Room + the host's own Participant row must be created together — a
     // room that exists with no host membership row would break
-    // listParticipants and the membership guard for its own creator.
+    // listParticipants and the membership guard for its own creator. The
+    // template's starter agenda (if any) is seeded in the SAME transaction
+    // so a room is never left half-created (room + participant but no
+    // agenda, or vice versa).
     return this.prisma.$transaction(async (tx) => {
       const room = await tx.room.create({
         data: {
@@ -80,6 +106,16 @@ export class RoomsService {
           admittedAt: new Date(),
         },
       });
+
+      if (template && template.agendaItems.length > 0) {
+        await tx.agendaItem.createMany({
+          data: template.agendaItems.map((title, index) => ({
+            roomId: room.id,
+            title,
+            order: index,
+          })),
+        });
+      }
 
       return room;
     });
@@ -822,5 +858,67 @@ export class RoomsService {
   async clearWhiteboard(roomId: string): Promise<void> {
     await this.getRoomById(roomId);
     await this.prisma.whiteboardStroke.deleteMany({ where: { roomId } });
+  }
+
+  // Late-joiner path, same shape as listWhiteboardStrokes above: any
+  // admitted room member (RoomMemberGuard, including a plain viewer) can
+  // fetch the CURRENT checklist state on mount, regardless of whether they
+  // were connected for any add/toggle/remove broadcast. Ordered by `order`
+  // ascending — there is no reorder endpoint (v1 scope cut), so this is
+  // simply creation order.
+  listAgendaItems(roomId: string) {
+    return this.prisma.agendaItem.findMany({
+      where: { roomId },
+      orderBy: { order: 'asc' },
+    });
+  }
+
+  // Host-or-co-host only (RoomHostOrCoHostGuard at the controller level —
+  // co-host gets the same agenda-management rights as host). New items are
+  // appended at the end regardless of how many exist already; count() is
+  // simpler than tracking a running max and behaves identically since
+  // order is always a dense 0..n-1 sequence with no reorder/gaps possible.
+  async addAgendaItem(roomId: string, dto: AddAgendaItemDto) {
+    await this.getRoomById(roomId);
+    const order = await this.prisma.agendaItem.count({ where: { roomId } });
+    return this.prisma.agendaItem.create({
+      data: { roomId, title: dto.title, order },
+    });
+  }
+
+  // BOLA-safe lookup (id + roomId both in the WHERE clause), the exact
+  // pattern PollsService.vote/closePoll already established — a caller
+  // can't toggle an agenda item that belongs to a different room just
+  // because they happen to have access to this one.
+  async toggleAgendaItem(
+    roomId: string,
+    itemId: string,
+    dto: ToggleAgendaItemDto,
+  ) {
+    const item = await this.prisma.agendaItem.findFirst({
+      where: { id: itemId, roomId },
+    });
+    if (!item) {
+      throw new NotFoundException(
+        'No agenda item with that id exists in this room',
+      );
+    }
+    return this.prisma.agendaItem.update({
+      where: { id: itemId },
+      data: { completed: dto.completed },
+    });
+  }
+
+  // Same BOLA-safe id+roomId lookup as toggleAgendaItem above.
+  async removeAgendaItem(roomId: string, itemId: string): Promise<void> {
+    const item = await this.prisma.agendaItem.findFirst({
+      where: { id: itemId, roomId },
+    });
+    if (!item) {
+      throw new NotFoundException(
+        'No agenda item with that id exists in this room',
+      );
+    }
+    await this.prisma.agendaItem.delete({ where: { id: itemId } });
   }
 }

@@ -2,12 +2,12 @@
 
 import { useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { isE2EESupported } from "livekit-client";
-import { createRoom } from "../api";
+import { createRoom, listTemplates } from "../api";
 import { generateE2eeKey, buildRoomPath } from "../e2ee";
 import { useAuthStore } from "@/features/auth/store";
 import { ApiError } from "@/lib/api-client";
@@ -54,16 +54,26 @@ export function CreateRoomForm() {
   const queryClient = useQueryClient();
   const accessToken = useAuthStore((s) => s.accessToken);
   const [serverError, setServerError] = useState<string | null>(null);
+  const [templateId, setTemplateId] = useState<string>("");
   const e2eeSupported = useSyncExternalStore(
     noopSubscribe,
     isE2EESupported,
     getServerE2eeSupport,
   );
 
+  // Own list of the user's templates, not room-scoped — populates
+  // template-select below. See TemplateManager.tsx for create/delete.
+  const { data: templates } = useQuery({
+    queryKey: ["templates", accessToken],
+    queryFn: () => listTemplates(accessToken as string),
+    enabled: !!accessToken,
+  });
+
   const {
     register,
     handleSubmit,
     control,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -74,6 +84,20 @@ export function CreateRoomForm() {
   // Compiler-friendly variant; `watch()` returns a function the compiler
   // can't safely memoize.
   const scheduleForLater = useWatch({ control, name: "scheduleForLater" });
+
+  // Prefills name/e2eeEnabled from the chosen template — still editable by
+  // the user afterward (a prefill, not a lock). templateId itself is
+  // tracked separately from react-hook-form's own state since it isn't a
+  // field the form itself validates or submits as part of FormValues; it's
+  // only carried through to the createRoom() call below.
+  const handleTemplateChange = (id: string) => {
+    setTemplateId(id);
+    if (!id) return;
+    const template = templates?.find((t) => t.id === id);
+    if (!template) return;
+    setValue("name", template.name);
+    setValue("e2eeEnabled", template.defaultE2eeEnabled);
+  };
 
   const onSubmit = async (values: FormValues) => {
     if (!accessToken) return;
@@ -98,6 +122,9 @@ export function CreateRoomForm() {
             ? new Date(values.scheduledFor).toISOString()
             : undefined,
           e2eeEnabled: !!e2eeKey,
+          // Omitted entirely (not empty string) when "None" is selected —
+          // the backend DTO's @IsOptional() @IsUUID() would reject "".
+          templateId: templateId || undefined,
         },
         accessToken,
       );
@@ -138,6 +165,23 @@ export function CreateRoomForm() {
               : "Start instant meeting"}
         </button>
       </div>
+
+      <label className="flex flex-col gap-1 text-sm text-gray-600">
+        Start from template (optional)
+        <select
+          data-testid="template-select"
+          value={templateId}
+          onChange={(e) => handleTemplateChange(e.target.value)}
+          className="border rounded px-3 py-2"
+        >
+          <option value="">None</option>
+          {templates?.map((template) => (
+            <option key={template.id} value={template.id}>
+              {template.name}
+            </option>
+          ))}
+        </select>
+      </label>
 
       <label className="flex items-center gap-2 text-sm text-gray-600">
         <input type="checkbox" {...register("scheduleForLater")} />
