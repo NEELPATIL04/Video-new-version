@@ -64,12 +64,7 @@ export function WaitingRoomHostPanel({ roomId }: WaitingRoomHostPanelProps) {
   };
 
   return (
-    <div
-      data-testid="waiting-room-host-panel"
-      // Positioned by the flex-column wrapper in CallRoom.tsx, not
-      // independently absolute — see that wrapper's own comment for why.
-      className="bg-black/80 text-white rounded p-3 text-sm w-56 shrink-0"
-    >
+    <div data-testid="waiting-room-host-panel" className="text-sm mt-4 pt-4 border-t border-white/10">
       <p className="font-medium mb-2">Waiting room ({waiting.length})</p>
       <ul className="flex flex-col gap-2">
         {waiting.map((p) => (
@@ -86,7 +81,7 @@ export function WaitingRoomHostPanel({ roomId }: WaitingRoomHostPanelProps) {
               <button
                 onClick={() => handleDeny(p.userId)}
                 disabled={pendingUserId === p.userId}
-                className="text-xs underline text-red-400 disabled:opacity-50"
+                className="text-xs underline text-danger disabled:opacity-50"
               >
                 Deny
               </button>

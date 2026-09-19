@@ -55,20 +55,20 @@ export function JoinByCodeForm() {
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="flex gap-2 items-start w-full max-w-md">
+    <form onSubmit={handleSubmit(onSubmit)} className="flex gap-2 items-start w-full">
       <div className="flex flex-col gap-1 flex-1">
         <input
           {...register("code")}
           placeholder="Enter meeting code"
-          className="border rounded px-3 py-2 w-full"
+          className="dash-input w-full"
         />
-        {errors.code && <p className="text-sm text-red-600">{errors.code.message}</p>}
-        {serverError && <p className="text-sm text-red-600">{serverError}</p>}
+        {errors.code && <p className="text-sm text-danger">{errors.code.message}</p>}
+        {serverError && <p className="text-sm text-danger">{serverError}</p>}
       </div>
       <button
         type="submit"
         disabled={isSubmitting}
-        className="border rounded px-4 py-2 disabled:opacity-50 whitespace-nowrap"
+        className="dash-button-secondary disabled:opacity-50 whitespace-nowrap"
       >
         {isSubmitting ? "Joining..." : "Join with code"}
       </button>

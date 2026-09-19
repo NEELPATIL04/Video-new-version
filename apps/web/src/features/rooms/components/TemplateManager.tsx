@@ -10,12 +10,15 @@ const MAX_AGENDA_ITEMS = 30;
 
 // A reusable, user-owned preset that prefills CreateRoomForm — NOT
 // room-scoped, no relation to any Room row (see schema.prisma's own
-// comment on MeetingTemplate). Rendered on /rooms alongside CreateRoomForm/
-// RoomList, following the same react-query create/list/invalidate pattern
-// CoHostControl and RoomList already use elsewhere in this feature.
+// comment on MeetingTemplate). Collapses to a chip row by default (see
+// the dashboard's own card system) — the full create form (unchanged
+// fields/mutations from the original always-visible version) only
+// expands on "+ New", matching the same "don't show every control at
+// once" restraint principle the in-call tray/menu already established.
 export function TemplateManager() {
   const accessToken = useAuthStore((s) => s.accessToken);
   const queryClient = useQueryClient();
+  const [expanded, setExpanded] = useState(false);
   const [name, setName] = useState("");
   const [e2eeEnabled, setE2eeEnabled] = useState(false);
   const [agendaItems, setAgendaItems] = useState<string[]>([""]);
@@ -44,6 +47,7 @@ export function TemplateManager() {
       setE2eeEnabled(false);
       setAgendaItems([""]);
       setError(null);
+      setExpanded(false);
       queryClient.invalidateQueries({ queryKey: ["templates"] });
     },
     onError: (err) => {
@@ -79,110 +83,125 @@ export function TemplateManager() {
   if (!accessToken) return null;
 
   return (
-    <div
-      data-testid="template-manager"
-      className="flex flex-col gap-3 w-full max-w-md border rounded px-4 py-3"
-    >
-      <h2 className="font-medium">Meeting templates</h2>
-
-      <div className="flex flex-col gap-2">
-        <input
-          data-testid="template-name-input"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Template name"
-          className="border rounded px-3 py-2 w-full"
-        />
-
-        <label className="flex items-center gap-2 text-sm text-gray-600">
-          <input
-            data-testid="template-e2ee-checkbox"
-            type="checkbox"
-            checked={e2eeEnabled}
-            onChange={(e) => setE2eeEnabled(e.target.checked)}
-          />
-          Enable end-to-end encryption by default
-        </label>
-
-        <div className="flex flex-col gap-1">
-          <p className="text-sm text-gray-600">Starter agenda</p>
-          {agendaItems.map((item, index) => (
-            <div key={index} className="flex items-center gap-1">
-              <input
-                data-testid={`template-agenda-item-input-${index}`}
-                value={item}
-                onChange={(e) => updateAgendaItem(index, e.target.value)}
-                placeholder={`Agenda item ${index + 1}`}
-                className="border rounded px-2 py-1 text-sm flex-1"
-              />
-              {agendaItems.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => removeAgendaItemRow(index)}
-                  className="text-xs shrink-0"
-                  aria-label={`Remove agenda item ${index + 1}`}
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-          ))}
-          {agendaItems.length < MAX_AGENDA_ITEMS && (
-            <button
-              type="button"
-              data-testid="template-add-agenda-item"
-              onClick={addAgendaItemRow}
-              className="text-xs underline self-start"
-            >
-              + Add agenda item
-            </button>
-          )}
-        </div>
-
-        {error && <p className="text-sm text-red-600">{error}</p>}
-
-        <button
-          type="button"
-          data-testid="template-submit-create"
-          onClick={handleCreate}
-          disabled={createMutation.isPending || !name.trim()}
-          className="bg-black text-white rounded px-4 py-2 disabled:opacity-50 self-start"
-        >
-          {createMutation.isPending ? "Creating..." : "Save template"}
-        </button>
+    <div data-testid="template-manager" className="dash-card">
+      <div className="flex items-center justify-between mb-3">
+        <p className="dash-card-title">Meeting templates</p>
+        {!expanded && (
+          <button
+            type="button"
+            data-testid="template-new-toggle"
+            onClick={() => setExpanded(true)}
+            className="text-xs text-primary underline decoration-white/30 underline-offset-2 hover:decoration-white/60"
+          >
+            + New
+          </button>
+        )}
       </div>
 
-      {isLoading && <p className="text-sm text-gray-500">Loading templates...</p>}
-      {!isLoading && (!templates || templates.length === 0) && (
-        <p className="text-sm text-gray-500">No templates yet — create one above.</p>
-      )}
-      {templates && templates.length > 0 && (
-        <ul data-testid="template-list" className="flex flex-col gap-2">
-          {templates.map((template) => (
-            <li
-              key={template.id}
-              className="border rounded px-3 py-2 flex items-center justify-between gap-2"
-            >
-              <div>
-                <p className="text-sm font-medium">{template.name}</p>
-                <p className="text-xs text-gray-500">
-                  {template.agendaItems.length} agenda item
-                  {template.agendaItems.length === 1 ? "" : "s"}
-                  {template.defaultE2eeEnabled ? " · E2EE" : ""}
-                </p>
-              </div>
+      {!expanded && (
+        <div data-testid="template-list" className="flex flex-wrap gap-2">
+          {isLoading && <p className="text-sm text-muted">Loading templates...</p>}
+          {!isLoading && (!templates || templates.length === 0) && (
+            <p className="text-sm text-muted">No templates yet — create one above.</p>
+          )}
+          {templates?.map((template) => (
+            <span key={template.id} className="dash-chip group">
+              {template.name}
+              <span className="text-muted text-xs">
+                {template.agendaItems.length} item{template.agendaItems.length === 1 ? "" : "s"}
+                {template.defaultE2eeEnabled ? " · E2EE" : ""}
+              </span>
               <button
                 type="button"
                 data-testid={`template-delete-${template.id}`}
                 onClick={() => deleteMutation.mutate(template.id)}
                 disabled={deleteMutation.isPending}
-                className="text-xs underline disabled:opacity-50 shrink-0"
+                aria-label={`Delete ${template.name}`}
+                className="dash-chip-remove"
               >
-                Delete
+                ✕
               </button>
-            </li>
+            </span>
           ))}
-        </ul>
+        </div>
+      )}
+
+      {expanded && (
+        <div className="flex flex-col gap-2">
+          <input
+            data-testid="template-name-input"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Template name"
+            className="dash-input w-full"
+          />
+
+          <label className="flex items-center gap-2 text-sm text-secondary">
+            <input
+              data-testid="template-e2ee-checkbox"
+              type="checkbox"
+              checked={e2eeEnabled}
+              onChange={(e) => setE2eeEnabled(e.target.checked)}
+            />
+            Enable end-to-end encryption by default
+          </label>
+
+          <div className="flex flex-col gap-1">
+            <p className="text-sm text-secondary">Starter agenda</p>
+            {agendaItems.map((item, index) => (
+              <div key={index} className="flex items-center gap-1">
+                <input
+                  data-testid={`template-agenda-item-input-${index}`}
+                  value={item}
+                  onChange={(e) => updateAgendaItem(index, e.target.value)}
+                  placeholder={`Agenda item ${index + 1}`}
+                  className="dash-input text-sm flex-1"
+                />
+                {agendaItems.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removeAgendaItemRow(index)}
+                    className="text-xs shrink-0 text-secondary"
+                    aria-label={`Remove agenda item ${index + 1}`}
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            ))}
+            {agendaItems.length < MAX_AGENDA_ITEMS && (
+              <button
+                type="button"
+                data-testid="template-add-agenda-item"
+                onClick={addAgendaItemRow}
+                className="text-xs text-primary underline decoration-white/30 underline-offset-2 hover:decoration-white/60 self-start"
+              >
+                + Add agenda item
+              </button>
+            )}
+          </div>
+
+          {error && <p className="text-sm text-danger">{error}</p>}
+
+          <div className="flex gap-2">
+            <button
+              type="button"
+              data-testid="template-submit-create"
+              onClick={handleCreate}
+              disabled={createMutation.isPending || !name.trim()}
+              className="dash-button-primary disabled:opacity-50"
+            >
+              {createMutation.isPending ? "Creating..." : "Save template"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setExpanded(false)}
+              className="text-xs text-secondary"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

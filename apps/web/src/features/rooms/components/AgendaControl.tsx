@@ -160,10 +160,7 @@ export function AgendaControl({ roomId, canManage }: AgendaControlProps) {
   if (items.length === 0 && !canManage) return null;
 
   return (
-    <div
-      data-testid="agenda-control"
-      className="absolute top-24 right-4 z-10 bg-black/80 text-white rounded p-3 text-sm w-64 flex flex-col gap-2"
-    >
+    <div data-testid="agenda-control" className="text-sm flex flex-col gap-2">
       <p className="font-medium">Agenda</p>
 
       <ul data-testid="agenda-list" className="flex flex-col gap-1">
@@ -184,7 +181,7 @@ export function AgendaControl({ roomId, canManage }: AgendaControlProps) {
             ) : (
               <span aria-hidden="true">{item.completed ? "☑" : "☐"}</span>
             )}
-            <span className={item.completed ? "line-through text-gray-400 flex-1" : "flex-1"}>
+            <span className={item.completed ? "line-through text-muted flex-1" : "flex-1"}>
               {item.title}
             </span>
             {canManage && (
@@ -201,7 +198,7 @@ export function AgendaControl({ roomId, canManage }: AgendaControlProps) {
             )}
           </li>
         ))}
-        {items.length === 0 && <li className="text-xs text-gray-300">No agenda items yet</li>}
+        {items.length === 0 && <li className="text-xs text-secondary">No agenda items yet</li>}
       </ul>
 
       {canManage && (
@@ -225,7 +222,7 @@ export function AgendaControl({ roomId, canManage }: AgendaControlProps) {
         </div>
       )}
 
-      {error && <p className="text-xs text-red-400">{error}</p>}
+      {error && <p className="text-xs text-danger">{error}</p>}
     </div>
   );
 }

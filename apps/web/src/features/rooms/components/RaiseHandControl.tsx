@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { useLocalParticipant, useParticipants } from "@livekit/components-react";
+import { useParticipants } from "@livekit/components-react";
 import { lowerParticipantHand } from "../api";
 import { useAuthStore } from "@/features/auth/store";
 
@@ -18,7 +18,10 @@ interface HandMetadata {
   handRaised?: boolean;
 }
 
-function isHandRaised(metadata?: string): boolean {
+// Exported for VideoStage's own compact toggle button in the main tray —
+// both read/write the same localParticipant.metadata, so LiveKit's own
+// reactive hooks keep them in sync with no shared React state needed.
+export function isHandRaised(metadata?: string): boolean {
   if (!metadata) return false;
   try {
     return (JSON.parse(metadata) as HandMetadata).handRaised === true;
@@ -45,32 +48,29 @@ function isHandRaised(metadata?: string): boolean {
 // directly, client-side, no backend round trip — safe because the
 // LiveKit access token's canUpdateOwnMetadata grant restricts this to a
 // participant's own identity; LiveKit itself won't let this call touch
-// anyone else's metadata. Lowering ANOTHER participant's hand (a host
-// queue-management action) can't go through that same call, so it's a
-// backend endpoint instead (POST .../lower-hand), guarded the same
-// assertActiveNonSelfParticipant way as mute/remove.
+// anyone else's metadata. The toggle for that lives in VideoStage's own
+// tray now (an icon-only button next to mic/camera/leave, reading/writing
+// the same metadata via the same isHandRaised helper above) — this
+// component keeps only the "who else has raised their hand" list and the
+// host/co-host-only "lower someone else's hand" action, which IS a
+// backend endpoint (POST .../lower-hand), guarded the same
+// assertActiveNonSelfParticipant way as mute/remove, since it acts on
+// another participant.
 export function RaiseHandControl({ roomId, canManage }: RaiseHandControlProps) {
   const accessToken = useAuthStore((s) => s.accessToken);
-  const { localParticipant } = useLocalParticipant();
   const participants = useParticipants();
-  const [pendingSelf, setPendingSelf] = useState(false);
   const [pendingIdentity, setPendingIdentity] = useState<string | null>(null);
-
-  const selfRaised = isHandRaised(localParticipant.metadata);
 
   const raisedHands = useMemo(
     () => participants.filter((p) => isHandRaised(p.metadata)),
     [participants],
   );
-
-  const handleToggleSelf = useCallback(async () => {
-    setPendingSelf(true);
-    try {
-      await localParticipant.setMetadata(JSON.stringify({ handRaised: !selfRaised }));
-    } finally {
-      setPendingSelf(false);
-    }
-  }, [localParticipant, selfRaised]);
+  // Your OWN raised hand already glows on the tray button itself — this
+  // popover exists to surface OTHER people's raised hands, so it should
+  // only appear when there's actually one to show. Without this, raising
+  // just your own hand pops up a redundant "Raised hands (1) — You" list
+  // right next to the button already showing that same state.
+  const hasOtherRaisedHand = raisedHands.some((p) => !p.isLocal);
 
   const handleLowerOther = useCallback(
     async (identity: string) => {
@@ -85,42 +85,28 @@ export function RaiseHandControl({ roomId, canManage }: RaiseHandControlProps) {
     [roomId, accessToken],
   );
 
-  return (
-    <div
-      data-testid="raise-hand-control"
-      className="absolute bottom-20 right-4 z-10 bg-black/80 text-white rounded p-3 text-sm w-56 flex flex-col gap-2"
-    >
-      <button
-        type="button"
-        onClick={handleToggleSelf}
-        disabled={pendingSelf}
-        className="text-xs underline disabled:opacity-50 self-start"
-      >
-        {selfRaised ? "Lower hand" : "✋ Raise hand"}
-      </button>
+  if (!hasOtherRaisedHand) return null;
 
-      {raisedHands.length > 0 && (
-        <>
-          <p className="font-medium">Raised hands ({raisedHands.length})</p>
-          <ul className="flex flex-col gap-2">
-            {raisedHands.map((p) => (
-              <li key={p.identity} className="flex items-center justify-between gap-2">
-                <span className="truncate">✋ {p.isLocal ? "You" : p.name ?? p.identity}</span>
-                {canManage && !p.isLocal && (
-                  <button
-                    type="button"
-                    onClick={() => handleLowerOther(p.identity)}
-                    disabled={pendingIdentity === p.identity}
-                    className="text-xs underline disabled:opacity-50 shrink-0"
-                  >
-                    Lower
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
+  return (
+    <div data-testid="raise-hand-control" className="panel-surface p-3 text-sm flex flex-col gap-2">
+      <p className="font-medium">Raised hands ({raisedHands.length})</p>
+      <ul className="flex flex-col gap-2">
+        {raisedHands.map((p) => (
+          <li key={p.identity} className="flex items-center justify-between gap-2">
+            <span className="truncate">✋ {p.isLocal ? "You" : p.name ?? p.identity}</span>
+            {canManage && !p.isLocal && (
+              <button
+                type="button"
+                onClick={() => handleLowerOther(p.identity)}
+                disabled={pendingIdentity === p.identity}
+                className="text-xs underline disabled:opacity-50 shrink-0"
+              >
+                Lower
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

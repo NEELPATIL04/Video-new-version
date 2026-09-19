@@ -3,9 +3,8 @@
 import { useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
-import { listMyRooms } from "../api";
 import { useAuthStore } from "@/features/auth/store";
+import type { Room } from "../api";
 
 // "482913657" -> "482 913 657" — easier to read aloud and to copy from.
 function formatJoinCode(code: string): string {
@@ -20,8 +19,30 @@ const ScheduledMeetingCalendarLinks = dynamic(
   { ssr: false },
 );
 
-export function RoomList() {
-  const accessToken = useAuthStore((s) => s.accessToken);
+const STATUS_DOT: Record<Room["status"], string> = {
+  active: "dash-status-active",
+  scheduled: "dash-status-scheduled",
+  ended: "dash-status-ended",
+};
+
+interface RoomListProps {
+  rooms: Room[];
+  isLoading: boolean;
+  error: boolean;
+  // True when `rooms` has already been narrowed by a search query, so an
+  // empty array means "no matches" rather than "no meetings at all" —
+  // two different messages for the viewer.
+  filtered?: boolean;
+}
+
+// Takes the already-fetched rooms list as a prop now (lifted to
+// app/rooms/page.tsx so DashboardStats/UpNextCard/RoomList all read the
+// exact same query result) rather than each independently calling
+// useQuery for the same data. Same actions as before (join-code copy,
+// host-only Analytics link, calendar links for a scheduled room) — only
+// the row markup is denser, with a status-colored dot instead of a plain
+// text badge.
+export function RoomList({ rooms, isLoading, error, filtered }: RoomListProps) {
   const user = useAuthStore((s) => s.user);
   const [copiedRoomId, setCopiedRoomId] = useState<string | null>(null);
 
@@ -37,57 +58,58 @@ export function RoomList() {
     }
   };
 
-  const { data: rooms, isLoading, error } = useQuery({
-    queryKey: ["rooms", accessToken],
-    queryFn: () => listMyRooms(accessToken as string),
-    enabled: !!accessToken,
-  });
-
-  if (isLoading) return <p className="text-sm text-gray-500">Loading meetings...</p>;
-  if (error) return <p className="text-sm text-red-600">Failed to load meetings</p>;
-  if (!rooms || rooms.length === 0) {
-    return <p className="text-sm text-gray-500">No meetings yet — start one above.</p>;
+  if (isLoading) return <p className="text-sm text-muted">Loading meetings...</p>;
+  if (error) return <p className="text-sm text-danger">Failed to load meetings</p>;
+  if (rooms.length === 0) {
+    return (
+      <p className="text-sm text-muted">
+        {filtered ? "No meetings match your search." : "No meetings yet — start one above."}
+      </p>
+    );
   }
 
   return (
-    <ul className="flex flex-col gap-2 w-full max-w-md">
+    <div className="flex flex-col">
       {rooms.map((room) => (
-        <li key={room.id} className="border rounded px-4 py-3 flex flex-col gap-2">
-          <Link href={`/rooms/${room.id}`} className="flex justify-between items-center hover:opacity-70">
-            <span>{room.name}</span>
-            <span className="text-xs uppercase text-gray-500">{room.status}</span>
+        <div key={room.id} className="dash-row">
+          <Link href={`/rooms/${room.id}`} className="flex items-center gap-3 flex-1 min-w-0 hover:opacity-80">
+            <span className={`dash-status-dot ${STATUS_DOT[room.status]}`} aria-hidden="true" />
+            <div className="min-w-0">
+              <p className="text-sm truncate">{room.name}</p>
+              <p className="text-xs text-muted">
+                Code: {formatJoinCode(room.joinCode)}
+                {room.status === "scheduled" && room.scheduledFor && (
+                  <> · {new Date(room.scheduledFor).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" })}</>
+                )}
+              </p>
+            </div>
           </Link>
-          <div className="flex items-center gap-2 text-xs text-gray-500">
-            <span>Code: {formatJoinCode(room.joinCode)}</span>
+          <div className="flex items-center gap-3 shrink-0">
             <button
               type="button"
               onClick={() => handleCopyCode(room.id, room.joinCode)}
-              className="underline"
+              className="text-xs text-secondary"
             >
-              {copiedRoomId === room.id ? "Copied" : "Copy"}
+              {copiedRoomId === room.id ? "Copied" : "Copy code"}
             </button>
             {/* Host-only — the backend re-verifies at the DB level
                 (RoomHostGuard + a second hostId check inside
                 getMeetingAnalytics), so this is just hiding an option
-                that would 403 anyway, not the actual access control.
-                Shown for any status: a scheduled meeting just lands on
-                a "hasn't started yet" state rather than being hidden
-                entirely. */}
+                that would 403 anyway, not the actual access control. */}
             {room.hostId === user?.id && (
-              <Link href={`/rooms/${room.id}/analytics`} className="underline ml-auto">
+              <Link
+                href={`/rooms/${room.id}/analytics`}
+                className="text-xs text-primary underline decoration-white/30 underline-offset-2 hover:decoration-white/60"
+              >
                 Analytics
               </Link>
             )}
+            {room.status === "scheduled" && room.scheduledFor && (
+              <ScheduledMeetingCalendarLinks roomId={room.id} name={room.name} scheduledFor={room.scheduledFor} />
+            )}
           </div>
-          {room.status === "scheduled" && room.scheduledFor && (
-            <ScheduledMeetingCalendarLinks
-              roomId={room.id}
-              name={room.name}
-              scheduledFor={room.scheduledFor}
-            />
-          )}
-        </li>
+        </div>
       ))}
-    </ul>
+    </div>
   );
 }

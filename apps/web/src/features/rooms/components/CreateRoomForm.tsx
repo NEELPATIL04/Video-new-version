@@ -143,20 +143,20 @@ export function CreateRoomForm() {
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-2 w-full max-w-md">
+    <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-3 w-full">
       <div className="flex gap-2 items-start">
         <div className="flex flex-col gap-1 flex-1">
           <input
             {...register("name")}
             placeholder="Meeting name"
-            className="border rounded px-3 py-2 w-full"
+            className="dash-input w-full"
           />
-          {errors.name && <p className="text-sm text-red-600">{errors.name.message}</p>}
+          {errors.name && <p className="text-sm text-danger">{errors.name.message}</p>}
         </div>
         <button
           type="submit"
           disabled={isSubmitting}
-          className="bg-black text-white rounded px-4 py-2 disabled:opacity-50 whitespace-nowrap"
+          className="dash-button-primary disabled:opacity-50 whitespace-nowrap"
         >
           {isSubmitting
             ? "Starting..."
@@ -166,13 +166,13 @@ export function CreateRoomForm() {
         </button>
       </div>
 
-      <label className="flex flex-col gap-1 text-sm text-gray-600">
+      <label className="flex flex-col gap-1 text-sm text-secondary">
         Start from template (optional)
         <select
           data-testid="template-select"
           value={templateId}
           onChange={(e) => handleTemplateChange(e.target.value)}
-          className="border rounded px-3 py-2"
+          className="dash-input"
         >
           <option value="">None</option>
           {templates?.map((template) => (
@@ -183,25 +183,25 @@ export function CreateRoomForm() {
         </select>
       </label>
 
-      <label className="flex items-center gap-2 text-sm text-gray-600">
+      <label className="flex items-center gap-2 text-sm text-secondary">
         <input type="checkbox" {...register("scheduleForLater")} />
         Schedule for later
       </label>
 
       {e2eeSupported && !scheduleForLater && (
         <>
-          <label className="flex items-center gap-2 text-sm text-gray-600">
+          <label className="flex items-center gap-2 text-sm text-secondary">
             <input type="checkbox" {...register("e2eeEnabled")} />
             Enable end-to-end encryption
           </label>
-          <p className="text-xs text-gray-400 -mt-1">
+          <p className="text-xs text-muted -mt-1">
             Only works with the full meeting link, not the join code — anyone joining will need
             the exact link you share right after starting the meeting.
           </p>
         </>
       )}
       {!e2eeSupported && !scheduleForLater && (
-        <p className="text-xs text-gray-400">
+        <p className="text-xs text-muted">
           End-to-end encryption isn&apos;t available in this browser.
         </p>
       )}
@@ -211,15 +211,15 @@ export function CreateRoomForm() {
           <input
             type="datetime-local"
             {...register("scheduledFor")}
-            className="border rounded px-3 py-2"
+            className="dash-input"
           />
           {errors.scheduledFor && (
-            <p className="text-sm text-red-600">{errors.scheduledFor.message}</p>
+            <p className="text-sm text-danger">{errors.scheduledFor.message}</p>
           )}
         </div>
       )}
 
-      {serverError && <p className="text-sm text-red-600">{serverError}</p>}
+      {serverError && <p className="text-sm text-danger">{serverError}</p>}
     </form>
   );
 }

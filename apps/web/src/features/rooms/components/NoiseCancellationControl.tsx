@@ -52,19 +52,19 @@ export function NoiseCancellationControl() {
 
   if (!supported) {
     return (
-      <div className="absolute bottom-20 left-4 z-10 bg-black/80 text-white rounded p-3 text-xs w-56">
+      <p className="text-xs text-secondary mt-4 pt-4 border-t border-white/10">
         Noise cancellation isn&apos;t supported in this browser.
-      </div>
+      </p>
     );
   }
 
   return (
-    <div className="absolute bottom-20 left-4 z-10 bg-black/80 text-white rounded p-3 text-sm w-56">
+    <div className="text-sm mt-4 pt-4 border-t border-white/10">
       <label className="flex items-center gap-2">
         <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
         Noise cancellation
       </label>
-      {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
+      {error && <p className="text-xs text-danger mt-2">{error}</p>}
     </div>
   );
 }

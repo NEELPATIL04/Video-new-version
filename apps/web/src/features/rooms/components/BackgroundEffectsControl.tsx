@@ -72,9 +72,9 @@ export function BackgroundEffectsControl() {
   // needs — say so rather than vanish with zero explanation.
   if (!supported) {
     return (
-      <div className="absolute bottom-20 right-4 z-10 bg-black/80 text-white rounded p-3 text-xs w-56">
+      <p className="text-xs text-secondary">
         Background effects aren&apos;t supported in this browser.
-      </div>
+      </p>
     );
   }
 
@@ -82,35 +82,33 @@ export function BackgroundEffectsControl() {
     candidate.mode === selection.mode &&
     (candidate.mode !== "image" || (selection as { imagePath: string }).imagePath === candidate.imagePath);
 
+  // Ember marks the currently-selected preset — an active/selected state,
+  // the same rule used everywhere else in this UI (previously font-weight
+  // only, with no color at all).
+  const optionClass = (selected: boolean) =>
+    `text-xs underline ${selected ? "text-ember" : ""}`;
+
   return (
-    <div className="absolute bottom-20 right-4 z-10 bg-black/80 text-white rounded p-3 text-sm w-56">
+    <div className="text-sm">
       <p className="font-medium mb-2">Background</p>
       <div className="flex flex-wrap gap-2">
-        <button
-          onClick={() => setSelection({ mode: "none" })}
-          className={`text-xs underline ${isSelected({ mode: "none" }) ? "font-bold" : ""}`}
-        >
+        <button onClick={() => setSelection({ mode: "none" })} className={optionClass(isSelected({ mode: "none" }))}>
           None
         </button>
-        <button
-          onClick={() => setSelection({ mode: "blur" })}
-          className={`text-xs underline ${isSelected({ mode: "blur" }) ? "font-bold" : ""}`}
-        >
+        <button onClick={() => setSelection({ mode: "blur" })} className={optionClass(isSelected({ mode: "blur" }))}>
           Blur
         </button>
         {BACKGROUND_PRESETS.map((preset) => (
           <button
             key={preset.id}
             onClick={() => setSelection({ mode: "image", imagePath: preset.imagePath })}
-            className={`text-xs underline ${
-              isSelected({ mode: "image", imagePath: preset.imagePath }) ? "font-bold" : ""
-            }`}
+            className={optionClass(isSelected({ mode: "image", imagePath: preset.imagePath }))}
           >
             {preset.label}
           </button>
         ))}
       </div>
-      {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
+      {error && <p className="text-xs text-danger mt-2">{error}</p>}
     </div>
   );
 }

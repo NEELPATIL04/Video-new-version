@@ -51,48 +51,44 @@ export function RegisterForm() {
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4 w-full max-w-sm">
       <div className="flex flex-col gap-1">
-        <label htmlFor="name" className="text-sm font-medium">
+        <label htmlFor="name" className="text-sm text-secondary">
           Name
         </label>
-        <input id="name" {...registerField("name")} className="border rounded px-3 py-2" autoComplete="name" />
-        {errors.name && <p className="text-sm text-red-600">{errors.name.message}</p>}
+        <input id="name" {...registerField("name")} className="dash-input w-full" autoComplete="name" />
+        {errors.name && <p className="text-sm text-danger">{errors.name.message}</p>}
       </div>
 
       <div className="flex flex-col gap-1">
-        <label htmlFor="email" className="text-sm font-medium">
+        <label htmlFor="email" className="text-sm text-secondary">
           Email
         </label>
         <input
           id="email"
           type="email"
           {...registerField("email")}
-          className="border rounded px-3 py-2"
+          className="dash-input w-full"
           autoComplete="email"
         />
-        {errors.email && <p className="text-sm text-red-600">{errors.email.message}</p>}
+        {errors.email && <p className="text-sm text-danger">{errors.email.message}</p>}
       </div>
 
       <div className="flex flex-col gap-1">
-        <label htmlFor="password" className="text-sm font-medium">
+        <label htmlFor="password" className="text-sm text-secondary">
           Password
         </label>
         <input
           id="password"
           type="password"
           {...registerField("password")}
-          className="border rounded px-3 py-2"
+          className="dash-input w-full"
           autoComplete="new-password"
         />
-        {errors.password && <p className="text-sm text-red-600">{errors.password.message}</p>}
+        {errors.password && <p className="text-sm text-danger">{errors.password.message}</p>}
       </div>
 
-      {serverError && <p className="text-sm text-red-600">{serverError}</p>}
+      {serverError && <p className="text-sm text-danger">{serverError}</p>}
 
-      <button
-        type="submit"
-        disabled={isSubmitting}
-        className="bg-black text-white rounded px-4 py-2 disabled:opacity-50"
-      >
+      <button type="submit" disabled={isSubmitting} className="dash-button-primary disabled:opacity-50">
         {isSubmitting ? "Creating account..." : "Create account"}
       </button>
     </form>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { PictureInPicture2 } from "lucide-react";
 
 // Scopes every DOM query below to the call's own root element rather than
 // the whole document — LiveKitRoom always renders `data-lk-theme` on its
@@ -158,28 +159,24 @@ export function PictureInPictureControl() {
   // outside this app's control (older Firefox/Safari, an iframe embed
   // with a restrictive Permissions-Policy) — say so rather than vanish
   // with zero explanation, same pattern as BackgroundEffectsControl/
-  // NoiseCancellationControl's own unsupported-browser case.
-  // bottom-52 left-4 — bottom-4 left-4 collides with CoHostControl (added
-  // on a separate branch, merged around the same time). See the flagged
-  // follow-up task for auditing every floating panel's position properly
-  // with real content-height clearance rather than guessed offsets.
+  // NoiseCancellationControl's own unsupported-browser case. Rendered as
+  // a row inside CallSidePanel's "More" menu now, not its own floating
+  // box.
   if (!supported) {
     return (
-      <div className="absolute bottom-52 left-4 z-10 bg-black/80 text-white rounded p-3 text-xs w-56">
+      <div data-testid="picture-in-picture-control" className="panel-surface p-3 text-xs">
         Picture-in-picture isn&apos;t supported in this browser.
       </div>
     );
   }
 
   return (
-    <div
-      data-testid="picture-in-picture-control"
-      className="absolute bottom-52 left-4 z-10 bg-black/80 text-white rounded p-3 text-sm"
-    >
-      <button type="button" onClick={handleToggle} className="text-xs underline">
+    <div data-testid="picture-in-picture-control" className="panel-surface p-3 text-sm">
+      <button type="button" onClick={handleToggle} className="flex items-center gap-2 text-xs">
+        <PictureInPicture2 size={16} aria-hidden="true" />
         {active ? "Exit picture-in-picture" : "Picture-in-picture"}
       </button>
-      {error && <p className="text-xs text-red-400 mt-2 w-48">{error}</p>}
+      {error && <p className="text-xs text-danger mt-2 w-48">{error}</p>}
     </div>
   );
 }

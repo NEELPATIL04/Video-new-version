@@ -77,6 +77,10 @@ test.describe.serial("raise hand", () => {
     // flow as every other real join (see waiting-room.spec.ts).
     await guestAPage.goto(roomUrl);
     await expect(guestAPage.getByText("Waiting for the host to let you in")).toBeVisible({ timeout: 10_000 });
+    // WaitingRoomHostPanel lives inside CallSidePanel's "People" drawer
+    // section now, not its own always-visible floating panel — open it
+    // via the rail before it's reachable.
+    await hostPage.getByTestId("rail-people").click();
     const waitingPanel = hostPage.getByTestId("waiting-room-host-panel");
     await expect(waitingPanel.getByRole("listitem").filter({ hasText: nameGuestA })).toBeVisible({
       timeout: 10_000,
@@ -91,15 +95,16 @@ test.describe.serial("raise hand", () => {
   });
 
   test("raising a hand is visible on the OTHER participant's page", async () => {
-    await guestAPage
-      .getByTestId("raise-hand-control")
-      .getByRole("button", { name: "✋ Raise hand" })
-      .click();
+    // The self-toggle lives in VideoStage's own tray now (an icon-only
+    // button next to mic/camera/leave), not inside raise-hand-control —
+    // that testid is scoped to the "who else has raised their hand" list
+    // and the host/co-host lower-other action only.
+    await guestAPage.getByRole("button", { name: "Raise hand" }).click();
 
     // The button on guest A's own page flips to "Lower hand"...
-    await expect(
-      guestAPage.getByTestId("raise-hand-control").getByRole("button", { name: "Lower hand" }),
-    ).toBeVisible({ timeout: 5_000 });
+    await expect(guestAPage.getByRole("button", { name: "Lower hand" })).toBeVisible({
+      timeout: 5_000,
+    });
 
     // ...and the real proof: it shows up on the HOST's page, synced via
     // LiveKit participant metadata, not just toggled locally.
@@ -136,24 +141,18 @@ test.describe.serial("raise hand", () => {
   });
 
   test("lowering a hand removes it from everyone's view", async () => {
-    await guestAPage
-      .getByTestId("raise-hand-control")
-      .getByRole("button", { name: "Lower hand" })
-      .click();
+    await guestAPage.getByRole("button", { name: "Lower hand" }).click();
 
-    await expect(
-      guestAPage.getByTestId("raise-hand-control").getByRole("button", { name: "✋ Raise hand" }),
-    ).toBeVisible({ timeout: 5_000 });
+    await expect(guestAPage.getByRole("button", { name: "Raise hand" })).toBeVisible({
+      timeout: 5_000,
+    });
     await expect(
       hostPage.getByTestId("raise-hand-control").getByRole("listitem").filter({ hasText: nameGuestA }),
     ).not.toBeVisible({ timeout: 5_000 });
   });
 
   test("the host can lower another participant's hand", async () => {
-    await guestAPage
-      .getByTestId("raise-hand-control")
-      .getByRole("button", { name: "✋ Raise hand" })
-      .click();
+    await guestAPage.getByRole("button", { name: "Raise hand" }).click();
     const hostListItem = hostPage
       .getByTestId("raise-hand-control")
       .getByRole("listitem")
@@ -167,8 +166,8 @@ test.describe.serial("raise hand", () => {
     // ...and guest A's own toggle reflects the host-initiated change too,
     // proving this actually flipped the shared LiveKit state rather than
     // just hiding the row on the host's screen.
-    await expect(
-      guestAPage.getByTestId("raise-hand-control").getByRole("button", { name: "✋ Raise hand" }),
-    ).toBeVisible({ timeout: 5_000 });
+    await expect(guestAPage.getByRole("button", { name: "Raise hand" })).toBeVisible({
+      timeout: 5_000,
+    });
   });
 });

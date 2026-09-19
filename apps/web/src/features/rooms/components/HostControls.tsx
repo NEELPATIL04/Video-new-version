@@ -43,10 +43,7 @@ export function HostControls({ roomId }: HostControlsProps) {
   };
 
   return (
-    <div
-      data-testid="host-controls"
-      className="absolute top-4 right-4 z-10 bg-black/80 text-white rounded p-3 text-sm w-56"
-    >
+    <div data-testid="host-controls" className="text-sm">
       <p className="font-medium mb-2">Host controls</p>
       <ul className="flex flex-col gap-2">
         {others.map((p) => (
@@ -63,7 +60,7 @@ export function HostControls({ roomId }: HostControlsProps) {
               <button
                 onClick={() => handleRemove(p.identity)}
                 disabled={pendingId === p.identity}
-                className="text-xs underline text-red-400 disabled:opacity-50"
+                className="text-xs underline text-danger disabled:opacity-50"
               >
                 Remove
               </button>

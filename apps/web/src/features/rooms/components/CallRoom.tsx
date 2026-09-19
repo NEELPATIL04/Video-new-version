@@ -1,39 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { ExternalE2EEKeyProvider, type DisconnectReason } from "livekit-client";
-import { LiveKitRoom, VideoConference } from "@livekit/components-react";
+import { LiveKitRoom } from "@livekit/components-react";
 import { getJoinStatus, type Participant } from "../api";
 import { useAuthStore } from "@/features/auth/store";
-import { CoHostControl } from "./CoHostControl";
-import { HostControls } from "./HostControls";
-import { MeetingLockControl } from "./MeetingLockControl";
-import { PictureInPictureControl } from "./PictureInPictureControl";
-import { ReactionsControl } from "./ReactionsControl";
-import { RaiseHandControl } from "./RaiseHandControl";
-import { PollControl } from "./PollControl";
-import { WhiteboardControl } from "./WhiteboardControl";
-import { AgendaControl } from "./AgendaControl";
-import { WaitingRoomHostPanel } from "./WaitingRoomHostPanel";
-import { BreakoutRoomsHostPanel } from "./BreakoutRoomsHostPanel";
-
-// @livekit/track-processors pulls in MediaPipe's WASM segmentation model
-// (~400KB+) and touches browser-only APIs (WebGL/insertable streams) at
-// import time — ssr:false keeps it out of the server render entirely and
-// out of the initial page bundle, loaded only once the call UI mounts.
-const BackgroundEffectsControl = dynamic(
-  () => import("./BackgroundEffectsControl").then((m) => m.BackgroundEffectsControl),
-  { ssr: false },
-);
-
-// Same reasoning as above — @sapphi-red/web-noise-suppressor loads an
-// AudioWorklet + WASM binary, both browser-only.
-const NoiseCancellationControl = dynamic(
-  () => import("./NoiseCancellationControl").then((m) => m.NoiseCancellationControl),
-  { ssr: false },
-);
+import { VideoStage } from "./VideoStage";
 
 type ParticipantRole = Participant["role"];
 
@@ -199,98 +172,20 @@ export function CallRoom({
       }
     >
       {e2ee && (
-        <div className="absolute top-4 left-4 z-10 bg-black/80 text-white text-xs rounded px-2 py-1">
+        <div className="absolute top-4 left-4 z-10 panel-surface text-xs px-2 py-1">
           🔒 Encrypted
         </div>
       )}
-      <VideoConference />
-      {/* Inside LiveKitRoom's context so HostControls can read the live
-          participant list — HostControls itself gates rendering when no
-          one else has joined yet, but the canManage check happens here so
-          neither a plain participant nor a not-yet-promoted viewer ever
-          mounts a component with mute/remove/lock actions. A co-host gets
-          the exact same panels as the real host — RoomHostOrCoHostGuard
-          backs every one of these actions on the backend too, so there's
-          no privilege this UI could offer that the API would refuse.
-          WaitingRoomHostPanel doesn't need LiveKit's context (it polls
-          the DB directly, since a waiting participant isn't connected to
-          LiveKit at all yet) but lives alongside the other host-or-cohost
-          overlays for the same reason. CoHostControl is the one panel
-          gated on strict isHost instead — appointing/revoking a co-host
-          is owner-only (RoomHostGuard, not RoomHostOrCoHostGuard), so a
-          co-host must never see this control at all. */}
-      {canManage && (
-        <>
-          <HostControls roomId={roomId} />
-          {/* WaitingRoomHostPanel alone here — BreakoutRoomsHostPanel moved
-              to the strict isHost block below, since BreakoutRoomsController
-              is RoomHostGuard-only (not RoomHostOrCoHostGuard): a co-host
-              could otherwise see the panel and get a 403 trying to actually
-              use it. Extending breakout-room management to co-hosts would
-              need that backend guard changed too, the same deliberate
-              follow-up already noted for polls/whiteboard above. */}
-          <WaitingRoomHostPanel roomId={roomId} />
-          <MeetingLockControl roomId={roomId} />
-        </>
-      )}
-      {isHost && (
-        <>
-          <CoHostControl roomId={roomId} />
-          {/* WaitingRoomHostPanel and BreakoutRoomsHostPanel both anchor to
-              the top-left corner and can each grow tall (a long waiting
-              list, a multi-room split with several participants) — but they
-              render in DIFFERENT gates now (canManage vs. strict isHost) and
-              so can no longer share one stacking container the way a single
-              earlier draft had them. A co-host-only call still gets
-              WaitingRoomHostPanel positioned independently at top-4 left-4;
-              this block's own BreakoutRoomsHostPanel uses top-24 left-4 to
-              clear it. See the flagged follow-up task for a proper
-              content-height-aware audit of every floating panel's
-              position — this is a stopgap, not the final layout. */}
-          <div className="absolute top-24 left-4 z-10 flex flex-col gap-3 max-h-[70vh] overflow-y-auto">
-            <BreakoutRoomsHostPanel roomId={roomId} />
-          </div>
-        </>
-      )}
-      {/* Every participant controls their own camera background and mic
-          noise cancellation, not just the host — and anyone can react,
-          not just the host. ReactionsControl isn't dynamic-imported like
-          the other two: useDataChannel is LiveKit's own hook, already
-          proven safe to import directly (HostControls does the same
-          with useParticipants), unlike the third-party WASM libraries
-          the other controls load. Same reasoning for RaiseHandControl
-          (useLocalParticipant/useParticipants, both LiveKit's own hooks)
-          — anyone can raise their own hand, not just the host; canManage
-          is only used inside it to decide whether to show the "lower
-          someone else's hand" action, extended to co-hosts the same way
-          as the panels above. PictureInPictureControl, PollControl, and
-          WhiteboardControl are all the same not-dynamic-imported shape
-          again: none of them have a browser-only import-time dependency
-          the way the WASM/worker-based controls above do (a plain
-          <canvas>, useDataChannel, and the standard Picture-in-Picture/
-          DOM APIs respectively), so none need ssr:false. PollControl and
-          WhiteboardControl both gate their more destructive actions
-          (create/close a poll; clear the canvas) on strict isHost rather
-          than canManage — extending either to co-hosts would need their
-          own backend guards changed too, deliberately left as a separate
-          follow-up rather than a drive-by change here. See FEATURES.md's
-          Research notes for each feature's own late-joiner design. */}
-      <BackgroundEffectsControl />
-      <NoiseCancellationControl />
-      <ReactionsControl />
-      <RaiseHandControl roomId={roomId} canManage={canManage} />
-      <PictureInPictureControl />
-      <PollControl roomId={roomId} isHost={isHost} />
-      <WhiteboardControl roomId={roomId} isHost={isHost} />
-      {/* Unlike PollControl/WhiteboardControl above, AgendaControl gates
-          its manage actions (add/toggle/remove) on canManage rather than
-          strict isHost — RoomHostOrCoHostGuard backs those endpoints on
-          the backend, so a co-host has genuine agenda-management rights,
-          not just a UI affordance. top-24 right-4 is free: HostControls
-          uses top-4 right-4, RaiseHandControl/BackgroundEffectsControl use
-          bottom-20 right-4 — confirmed by grepping every floating panel's
-          className in this directory before choosing this position. */}
-      <AgendaControl roomId={roomId} canManage={canManage} />
+      {/* VideoStage owns the entire persistent call surface now: the
+          video grid, and one tray of six controls (mic/camera/share/
+          react/raise-hand/more/leave) — nothing else floats on screen by
+          default. Reactions collapse to a single toggle + popover instead
+          of 5 permanently-visible emoji circles; People/Co-hosts/
+          Breakout/Background/Polls/Agenda/Whiteboard/Picture-in-picture/
+          Lock all live behind the one "More" menu instead of 8
+          simultaneously-visible rail icons. See VideoStage.tsx and
+          CallSidePanel.tsx for the full reasoning. */}
+      <VideoStage roomId={roomId} canManage={canManage} isHost={isHost} />
     </LiveKitRoom>
   );
 }

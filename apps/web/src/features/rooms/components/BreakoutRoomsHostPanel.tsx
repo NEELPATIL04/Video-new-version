@@ -131,16 +131,7 @@ export function BreakoutRoomsHostPanel({ roomId }: BreakoutRoomsHostPanelProps) 
   const isActive = activeRooms.length > 0;
 
   return (
-    <div
-      data-testid="breakout-rooms-host-panel"
-      // Positioned by the flex-column wrapper in CallRoom.tsx, not
-      // independently absolute — see that wrapper's own comment for why
-      // (this panel used to sit at bottom-4 left-4, directly overlapping
-      // NoiseCancellationControl's bottom-20 left-4 box once it grew past
-      // a couple of participants, silently eating clicks on the room-
-      // assignment buttons).
-      className="bg-black/80 text-white rounded p-3 text-sm w-64 flex flex-col gap-2 shrink-0"
-    >
+    <div data-testid="breakout-rooms-host-panel" className="text-sm flex flex-col gap-2">
       <p className="font-medium">Breakout rooms</p>
 
       {isActive ? (
@@ -149,7 +140,7 @@ export function BreakoutRoomsHostPanel({ roomId }: BreakoutRoomsHostPanelProps) 
             {activeRooms.map((r) => (
               <li key={r.id}>
                 <p className="font-medium">{r.label}</p>
-                <ul className="pl-2 text-xs text-gray-300">
+                <ul className="pl-2 text-xs text-secondary">
                   {r.participants.length === 0 && <li>No one assigned yet</li>}
                   {r.participants.map((p) => (
                     <li key={p.userId}>{p.user.name}</li>
@@ -168,7 +159,7 @@ export function BreakoutRoomsHostPanel({ roomId }: BreakoutRoomsHostPanelProps) 
           </button>
         </>
       ) : others.length === 0 ? (
-        <p className="text-xs text-gray-300">No one else has joined yet.</p>
+        <p className="text-xs text-secondary">No one else has joined yet.</p>
       ) : (
         <>
           <label className="text-xs flex items-center gap-2">
@@ -195,8 +186,13 @@ export function BreakoutRoomsHostPanel({ roomId }: BreakoutRoomsHostPanelProps) 
                       type="button"
                       onClick={() => toggleAssignment(p.identity, n)}
                       aria-pressed={assignments[p.identity] === n}
+                      // Ember marks the currently-selected room assignment
+                      // for this participant — an active/selected state,
+                      // the same rule used everywhere else in this UI.
                       className={`text-xs rounded px-1.5 ${
-                        assignments[p.identity] === n ? "bg-indigo-600" : "bg-white/10"
+                        assignments[p.identity] === n
+                          ? "bg-ember text-ember-fg"
+                          : "bg-white/10"
                       }`}
                     >
                       Room {n}
@@ -216,7 +212,7 @@ export function BreakoutRoomsHostPanel({ roomId }: BreakoutRoomsHostPanelProps) 
           </button>
         </>
       )}
-      {error && <p className="text-xs text-red-400">{error}</p>}
+      {error && <p className="text-xs text-danger">{error}</p>}
     </div>
   );
 }

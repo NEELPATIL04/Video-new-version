@@ -189,10 +189,7 @@ export function PollControl({ roomId, isHost }: PollControlProps) {
   const canVote = !!poll && poll.status === "open" && !poll.hasVoted;
 
   return (
-    <div
-      data-testid="poll-control"
-      className="absolute bottom-20 left-4 z-10 bg-black/80 text-white rounded p-3 text-sm w-64 flex flex-col gap-2"
-    >
+    <div data-testid="poll-control" className="text-sm flex flex-col gap-2">
       {!poll && isHost && !showCreateForm && (
         <button
           type="button"
@@ -235,7 +232,7 @@ export function PollControl({ roomId, isHost }: PollControlProps) {
               + Add option
             </button>
           )}
-          {error && <p className="text-xs text-red-400">{error}</p>}
+          {error && <p className="text-xs text-danger">{error}</p>}
           <div className="flex gap-2">
             <button
               type="button"
@@ -256,7 +253,7 @@ export function PollControl({ roomId, isHost }: PollControlProps) {
       {poll && (
         <div data-testid="poll-active" className="flex flex-col gap-2">
           <p className="font-medium">{poll.question}</p>
-          {poll.status === "closed" && <p className="text-xs text-gray-300">Poll closed</p>}
+          {poll.status === "closed" && <p className="text-xs text-secondary">Poll closed</p>}
 
           {canVote && (
             <ul data-testid="poll-vote-options" className="flex flex-col gap-1">
@@ -290,13 +287,13 @@ export function PollControl({ roomId, isHost }: PollControlProps) {
                         {option.voteCount} · {pct}%
                       </span>
                     </div>
-                    <div className="h-1 bg-white/20 rounded mt-0.5">
-                      <div className="h-1 bg-white rounded" style={{ width: `${pct}%` }} />
+                    <div className="h-1 bg-white/10 rounded mt-0.5">
+                      <div className="h-1 bg-secondary rounded" style={{ width: `${pct}%` }} />
                     </div>
                   </li>
                 );
               })}
-              <li className="text-xs text-gray-300">{poll.totalVotes} vote{poll.totalVotes === 1 ? "" : "s"} total</li>
+              <li className="text-xs text-secondary">{poll.totalVotes} vote{poll.totalVotes === 1 ? "" : "s"} total</li>
             </ul>
           )}
 

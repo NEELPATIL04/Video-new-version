@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Lock, Unlock } from "lucide-react";
 import { getRoom, lockRoom, unlockRoom } from "../api";
 import { useAuthStore } from "@/features/auth/store";
 
@@ -8,10 +9,11 @@ interface MeetingLockControlProps {
   roomId: string;
 }
 
-// Host-only, same floating-panel pattern as HostControls/
-// WaitingRoomHostPanel. Not rendered for regular participants at all —
-// they have no use for a toggle they can't act on (CallRoom gates this
-// the same way it gates the other host-only panels).
+// Host-only. Rendered as a compact pill inside CallSidePanel's icon rail
+// (not its own floating panel — a single boolean toggle doesn't need a
+// drawer section). Not rendered for regular participants at all — they
+// have no use for a toggle they can't act on (CallRoom gates this the
+// same way it gates the other host-only controls).
 //
 // "Locked" blocks brand-new joiners in RoomsService.joinRoom; it never
 // affects anyone who already has a Participant row, including the host —
@@ -57,17 +59,21 @@ export function MeetingLockControl({ roomId }: MeetingLockControlProps) {
   };
 
   return (
-    <div
-      data-testid="meeting-lock-control"
-      className="absolute bottom-4 right-4 z-10 bg-black/80 text-white rounded p-3 text-sm"
-    >
+    <div data-testid="meeting-lock-control">
       <button
         type="button"
         onClick={handleToggle}
         disabled={pending}
-        className="text-xs underline disabled:opacity-50"
+        // Ember marks "the meeting is currently locked" — the one active/
+        // needs-attention state this control has. Unlocked (the default)
+        // stays the plain rail-button look. The menu-row reskin (globals.css)
+        // forces this button's background transparent, so the ember cue
+        // lives on the icon/text color instead of rail-button-active's bg.
+        className="rail-button w-auto px-3 text-xs whitespace-nowrap disabled:opacity-50"
+        style={{ color: locked ? "var(--color-ember)" : undefined }}
       >
-        {locked ? "🔒 Unlock meeting" : "🔓 Lock meeting"}
+        {locked ? <Unlock size={16} aria-hidden="true" /> : <Lock size={16} aria-hidden="true" />}
+        {locked ? "Unlock meeting" : "Lock meeting"}
       </button>
     </div>
   );
