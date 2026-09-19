@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { PenLine } from "lucide-react";
 import { useDataChannel } from "@livekit/components-react";
 import {
   addWhiteboardStroke,
@@ -216,62 +217,71 @@ export function WhiteboardControl({ roomId, isHost }: WhiteboardControlProps) {
     await broadcast({ type: "clear" });
   }, [accessToken, roomId, broadcast]);
 
-  // top-20 left-4 — bottom-4 left-4 collides with CoHostControl (added
-  // on a separate branch, merged around the same time). See the flagged
-  // follow-up task for auditing every floating panel's position properly
-  // with real content-height clearance rather than guessed offsets.
+  // The toggle is a row inside CallSidePanel's "More" menu now, not its
+  // own floating box — this component owns its open/closed state and the
+  // e2e suite (whiteboard.spec.ts) drives it via
+  // whiteboard-control > whiteboard-toggle exactly as before, so only the
+  // CSS presentation changed here, not the interaction shape. The open
+  // panel is a centered overlay (a real drawing canvas doesn't fit in a
+  // menu row) rather than an inline dropdown.
   return (
-    <div data-testid="whiteboard-control" className="absolute top-20 left-4 z-20 flex flex-col items-start gap-2">
+    <div data-testid="whiteboard-control">
       <button
         type="button"
         data-testid="whiteboard-toggle"
         onClick={() => setOpen((o) => !o)}
-        className="bg-black/80 text-white rounded p-3 text-sm"
+        aria-label={open ? "Close whiteboard" : "Whiteboard"}
+        className={`rail-button ${open ? "rail-button-active" : ""}`}
       >
-        {open ? "Close whiteboard" : "🖊 Whiteboard"}
+        <PenLine size={16} aria-hidden="true" /> Whiteboard
       </button>
 
       {open && (
-        <div data-testid="whiteboard-panel" className="bg-white text-black rounded shadow-lg p-2 flex flex-col gap-2">
-          <div className="flex items-center gap-2 text-xs">
-            {COLORS.map((c) => (
-              <button
-                key={c}
-                type="button"
-                aria-label={`Color ${c}`}
-                onClick={() => setColor(c)}
-                style={{ backgroundColor: c }}
-                className={`w-5 h-5 rounded-full border-2 ${color === c ? "border-black" : "border-transparent"}`}
+        <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/60">
+          <div data-testid="whiteboard-panel" className="panel-surface p-4 flex flex-col gap-2">
+            <div className="flex items-center gap-2 text-xs">
+              {COLORS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  aria-label={`Color ${c}`}
+                  onClick={() => setColor(c)}
+                  style={{ backgroundColor: c }}
+                  className={`w-5 h-5 rounded-full border-2 ${color === c ? "border-ember" : "border-transparent"}`}
+                />
+              ))}
+              <input
+                type="color"
+                aria-label="Custom color"
+                value={color}
+                onChange={(e) => setColor(e.target.value)}
+                className="w-6 h-6"
               />
-            ))}
-            <input
-              type="color"
-              aria-label="Custom color"
-              value={color}
-              onChange={(e) => setColor(e.target.value)}
-              className="w-6 h-6"
-            />
-            <button type="button" onClick={handleUndo} className="ml-2 underline">
-              Undo
-            </button>
-            {isHost && (
-              <button type="button" onClick={handleClear} className="underline">
-                Clear canvas
+              <button type="button" onClick={handleUndo} className="ml-2 underline">
+                Undo
               </button>
-            )}
+              {isHost && (
+                <button type="button" onClick={handleClear} className="underline">
+                  Clear canvas
+                </button>
+              )}
+              <button type="button" onClick={() => setOpen(false)} className="underline ml-auto">
+                Close
+              </button>
+            </div>
+            <canvas
+              ref={canvasRef}
+              data-testid="whiteboard-canvas"
+              width={CANVAS_WIDTH}
+              height={CANVAS_HEIGHT}
+              style={{ touchAction: "none", width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
+              className="border border-white/20 rounded cursor-crosshair"
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              onPointerLeave={handlePointerUp}
+            />
           </div>
-          <canvas
-            ref={canvasRef}
-            data-testid="whiteboard-canvas"
-            width={CANVAS_WIDTH}
-            height={CANVAS_HEIGHT}
-            style={{ touchAction: "none", width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
-            className="border border-gray-300 rounded cursor-crosshair"
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-            onPointerLeave={handlePointerUp}
-          />
         </div>
       )}
     </div>

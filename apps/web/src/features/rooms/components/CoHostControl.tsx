@@ -72,22 +72,16 @@ export function CoHostControl({ roomId }: CoHostControlProps) {
   };
 
   return (
-    <div
-      data-testid="co-host-control"
-      // bottom-4 left-4 — the right-4 column is already crowded
-      // (MeetingLockControl bottom-4, RaiseHandControl and
-      // BackgroundEffectsControl both bottom-20, which collide with each
-      // other independently of this feature). bottom-4 left-4 is the one
-      // clearly unclaimed corner (WaitingRoomHostPanel is top-4 left-4,
-      // NoiseCancellationControl is bottom-20 left-4).
-      className="absolute bottom-4 left-4 z-10 bg-black/80 text-white rounded p-3 text-sm w-56"
-    >
+    <div data-testid="co-host-control" className="text-sm">
       <p className="font-medium mb-2">Co-hosts</p>
       <ul className="flex flex-col gap-2">
         {others.map((p) => (
           <li key={p.userId} className="flex items-center justify-between gap-2">
             <span className="truncate">
-              {p.role === "cohost" ? "⭐ " : ""}
+              {/* Ember marks "currently a co-host" — an active/selected
+                  state, same rule as the meeting-lock and breakout-room
+                  assignment indicators. */}
+              {p.role === "cohost" ? <span className="text-ember">⭐ </span> : ""}
               {p.user.name}
             </span>
             <button

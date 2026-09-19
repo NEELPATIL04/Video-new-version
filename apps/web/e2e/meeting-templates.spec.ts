@@ -81,6 +81,9 @@ test.describe.serial("meeting templates & agenda", () => {
   });
 
   test("host creates a template via the UI and sees it appear in the list", async () => {
+    // The create form is collapsed behind "+ New" by default now — see
+    // TemplateManager.tsx's own dashboard-card restyling.
+    await hostPage.getByTestId("template-new-toggle").click();
     await hostPage.getByTestId("template-name-input").fill(templateName);
     await hostPage.getByTestId("template-agenda-item-input-0").fill(agendaItem1);
     await hostPage.getByTestId("template-add-agenda-item").click();

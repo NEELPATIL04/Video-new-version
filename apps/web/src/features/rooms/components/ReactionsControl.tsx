@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { useDataChannel, useLocalParticipant } from "@livekit/components-react";
+import { Smile } from "lucide-react";
 
 // "reactions" is our own topic, deliberately distinct from LiveKit's own
 // built-in chat topic ("lk.chat") so the two never collide on the same
@@ -31,10 +32,20 @@ interface ReactionPayload {
 // BackgroundEffectsControl/NoiseCancellationControl) — useDataChannel is
 // LiveKit's own hook, already proven safe to import directly elsewhere
 // in this codebase (HostControls uses useParticipants the same way).
+//
+// Self-contained toggle + popover now (not a permanently-visible 5-emoji
+// row) — collapsing every rarely-needed control behind a single trigger
+// is what keeps the tray itself down to 6 buttons instead of a dozen+
+// simultaneously-visible controls (see the agreed reference mockup). The
+// data-channel subscription and floating-bubble display stay mounted
+// unconditionally regardless of whether the picker itself is open — a
+// participant must still SEE other people's reactions even while their
+// own picker is closed.
 export function ReactionsControl() {
   const { localParticipant } = useLocalParticipant();
   const [floating, setFloating] = useState<FloatingReaction[]>([]);
   const [onCooldown, setOnCooldown] = useState(false);
+  const [open, setOpen] = useState(false);
 
   const showReaction = useCallback((emoji: string, senderName: string) => {
     const id = `${Date.now()}-${Math.random()}`;
@@ -74,28 +85,46 @@ export function ReactionsControl() {
       // The data channel only delivers to OTHER participants, not back
       // to the sender — show our own reaction locally so we see it too.
       showReaction(emoji, localParticipant.name || "You");
+      setOpen(false);
     },
     [onCooldown, send, localParticipant, showReaction],
   );
 
   return (
     <>
-      <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-10 bg-black/80 text-white rounded p-2 flex gap-2">
-        {REACTIONS.map((emoji) => (
-          <button
-            key={emoji}
-            type="button"
-            onClick={() => handleSend(emoji)}
-            disabled={onCooldown}
-            className="text-xl disabled:opacity-40"
-          >
-            {emoji}
-          </button>
-        ))}
+      <div className="tray-item-with-popover">
+        <button
+          type="button"
+          data-testid="reactions-toggle"
+          aria-label="React"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+          className={`tray-button ${open ? "tray-button-active" : ""}`}
+        >
+          <Smile size={20} />
+        </button>
+        {open && (
+          <div data-testid="reactions-popover" className="tray-popover flex gap-2">
+            {REACTIONS.map((emoji) => (
+              <button
+                key={emoji}
+                type="button"
+                onClick={() => handleSend(emoji)}
+                disabled={onCooldown}
+                className="text-xl disabled:opacity-40"
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
+      {/* This one stays independently positioned — floating reaction
+          bubbles drift upward over the video regardless of whether the
+          picker itself is open. */}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex flex-col gap-1 items-center pointer-events-none">
         {floating.map((r) => (
-          <div key={r.id} className="bg-black/70 text-white text-sm rounded px-2 py-1">
+          <div key={r.id} className="panel-surface text-sm px-2 py-1">
             {r.emoji} {r.senderName}
           </div>
         ))}

@@ -24,3 +24,722 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/*
+ * In-call ("meeting side") theme: graphite + ember.
+ *
+ * Single source of truth for every panel/control rendered inside
+ * CallRoom.tsx. Ember (--color-ember) means exactly one thing across this
+ * whole surface: "this is currently active, selected, or needs your
+ * attention" (raised hand, meeting locked, a selected breakout assignment,
+ * a selected background preset, LiveKit's own --lk-accent-bg). It is never
+ * used for default chrome, hover states, or "done" states. Danger actions
+ * (Remove, Deny, LiveKit's own Disconnect button) use --color-danger,
+ * which intentionally matches LiveKit's shipped --lk-danger (#f91f31) so
+ * the prefab and this app's own panels never disagree about what "red"
+ * means.
+ */
+@theme {
+  --color-surface-0: #131211;
+  --color-surface-1: #1c1c1b;
+  --color-surface-2: #2c2c2a;
+  --color-surface-3: #444441;
+  --color-text-primary: #ffffff;
+  --color-text-secondary: #b4b2a9;
+  --color-text-muted: #888780;
+  --color-ember: #d85a30;
+  --color-ember-fg: #4a1b0c;
+  --color-danger: #f91f31;
+  --color-danger-fg: #ffffff;
+}
+
+@utility panel-surface {
+  background-color: var(--color-surface-1);
+  color: var(--color-text-primary);
+  border-radius: var(--radius-md);
+}
+
+/* The right-edge icon rail's own buttons — see CallSidePanel.tsx. */
+@utility rail-button {
+  background-color: var(--color-surface-2);
+  color: var(--color-text-primary);
+  border-radius: 9999px;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  line-height: 1;
+  transition: background-color 0.15s ease;
+}
+
+@utility rail-button-active {
+  background-color: var(--color-ember);
+  color: var(--color-ember-fg);
+}
+
+/* The one open drawer panel — see CallSidePanel.tsx. Deliberately its own
+   utility rather than reusing panel-surface: it's a full-height fixed
+   region, not an inline floating box. */
+@utility drawer-surface {
+  background-color: var(--color-surface-1);
+  color: var(--color-text-primary);
+  border-radius: var(--radius-md);
+}
+
+/*
+ * Overrides LiveKit's own theme variables (see @livekit/components-styles,
+ * scoped to [data-lk-theme="default"] on CallRoom.tsx's <LiveKitRoom>) so
+ * the video grid and ControlBar prefab match this palette instead of
+ * their shipped dark-gray-plus-blue default. --lk-danger* is deliberately
+ * left untouched — it's already correct.
+ */
+[data-lk-theme="default"] {
+  --lk-bg: var(--color-surface-0);
+  --lk-bg2: var(--color-surface-1);
+  --lk-bg3: var(--color-surface-2);
+  --lk-bg4: var(--color-surface-3);
+  --lk-bg5: var(--color-surface-3);
+  --lk-fg: var(--color-text-primary);
+  --lk-fg2: var(--color-text-secondary);
+  --lk-accent-bg: var(--color-ember);
+  --lk-accent-fg: var(--color-ember-fg);
+}
+
+/*
+ * VideoStage.tsx composes GridLayout/ParticipantTile/ControlBar directly
+ * instead of going through <VideoConference /> — this app owns this
+ * markup outright, so sizing it is plain CSS, not fighting a third-party
+ * component's own shared classes/variables (see VideoStage.tsx's own
+ * comment for why that composition happened).
+ */
+.video-stage {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.video-stage-grid {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+/* The literal gap between the video grid and the tray, matching the
+   agreed mockup directly — no calc()/shared-variable archaeology. */
+.video-stage-tray {
+  display: flex;
+  justify-content: center;
+  padding: 16px 0 24px;
+}
+
+/* The ONE shared pill shell — ControlBar's own buttons AND the separate
+   raise-hand button (see VideoStage.tsx) both sit inside this same
+   container, rather than ControlBar rendering its own independent pill
+   with the hand button floating as a detached sibling next to it. */
+.video-stage-tray-pill {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 9999px;
+  background-color: var(--color-surface-2);
+}
+
+/* display: contents removes .lk-control-bar's own box entirely, promoting
+   its children (mic group, camera group, share, leave) to be DIRECT flex
+   items of .video-stage-tray-pill, siblings of reactions/raise-hand/more
+   — not nested inside a second flex container. This is what makes
+   .lk-disconnect-button's own order: 99 below actually work: order only
+   reorders items within the SAME flex formatting context, and Leave was
+   one level too deep to be reordered against the pill's other children
+   before this. */
+.video-stage-tray .lk-control-bar {
+  display: contents;
+}
+
+/* The raise-hand button (not part of ControlBar) matches the exact same
+   size/shape/base color as ControlBar's own buttons below, so it reads as
+   one more button in the same row, not a visually distinct control. */
+.tray-button {
+  width: 44px;
+  height: 44px;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--color-surface-3);
+  color: var(--color-text-primary);
+}
+
+.tray-button-active {
+  background-color: var(--color-ember);
+  color: var(--color-ember-fg);
+}
+
+/* Plain, identical circles — no attached device-picker chevron. Losing
+   the in-call device switcher is a deliberate trade for matching the
+   agreed mockup exactly; OS-level permission prompts still cover picking
+   a mic/camera on first use. */
+.video-stage-tray .lk-button-group-menu {
+  display: none;
+}
+
+.video-stage-tray .lk-button,
+.video-stage-tray .lk-disconnect-button {
+  --lk-control-bg: var(--color-surface-3);
+  --lk-control-hover-bg: var(--color-surface-3);
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  gap: 0;
+  /* Hides the "Microphone"/"Camera"/"Share screen"/"Leave" text node
+     visually only — font-size: 0 collapses its rendered glyphs to
+     nothing without touching the accessibility tree (unlike
+     display:none/visibility:hidden, which would also remove the
+     button's accessible name). See VideoStage.tsx's own comment for why
+     this is necessary instead of just using variation="minimal". */
+  font-size: 0;
+}
+
+.video-stage-tray .lk-button svg,
+.video-stage-tray .lk-disconnect-button svg {
+  font-size: 1rem;
+}
+
+/* Overrides .lk-button-group>.lk-button:first-child's own zeroed corners
+   (meant to visually attach it to the now-hidden chevron button) back to
+   a full circle — same selector specificity, !important makes the intent
+   explicit rather than relying on cascade order against a third-party
+   stylesheet. */
+.video-stage-tray .lk-button,
+.video-stage-tray .lk-button-group > .lk-button,
+.video-stage-tray .lk-disconnect-button {
+  border-radius: 9999px !important;
+}
+
+.video-stage-tray .lk-disconnect-button {
+  border: none;
+  background-color: var(--color-danger);
+  color: var(--color-danger-fg);
+  position: relative;
+}
+
+/* ControlBar doesn't expose a way to swap its internal icon via props —
+   the built-in SVG is hidden and a custom phone-hangup glyph (matching
+   the agreed mockup, not LiveKit's own default "exit" icon) is drawn via
+   a background-image data URI instead. This only changes the glyph: the
+   button's real onClick/accessible name (kept via the font-size: 0
+   technique above, not this) are completely untouched. */
+.video-stage-tray .lk-disconnect-button svg {
+  display: none;
+}
+
+.video-stage-tray .lk-disconnect-button::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 20px;
+  height: 20px;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  /* lucide-react's actual PhoneOff icon (node_modules/lucide-react/dist/
+     esm/icons/phone-off.mjs) — a real, professionally-designed icon's
+     path data, not a hand-drawn attempt (a prior freehand phone+X path
+     rendered as an illegible blob). Can't render the React component
+     directly since this is LiveKit's own button; the exact same path
+     data is reused here instead of inventing new artwork. */
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='white'%20stroke-width='2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='M10.1%2013.9a14%2014%200%200%200%203.732%202.668%201%201%200%200%200%201.213-.303l.355-.465A2%202%200%200%201%2017%2015h3a2%202%200%200%201%202%202v3a2%202%200%200%201-2%202%2018%2018%200%200%201-12.728-5.272'/%3E%3Cpath%20d='M22%202%202%2022'/%3E%3Cpath%20d='M4.76%2013.582A18%2018%200%200%201%202%204a2%202%200%200%201%202-2h3a2%202%200%200%201%202%202v3a2%202%200%200%201-.8%201.6l-.468.351a1%201%200%200%200-.292%201.233%2014%2014%200%200%200%20.244.473'/%3E%3C/svg%3E");
+}
+
+.video-stage-tray .lk-disconnect-button:not(:disabled):hover {
+  background-color: var(--color-danger);
+  opacity: 0.85;
+}
+
+/* Pushes Leave visually to the very end of the tray despite ControlBar
+   rendering it right after mic/camera/share in the DOM — everything else
+   in the pill (reactions, raise-hand, the divider, More) keeps its
+   default order:0 and so stays in its natural DOM position, ahead of
+   Leave. See VideoStage.tsx's own comment for why this beats a second,
+   separately-rendered disconnect button. */
+.video-stage-tray .lk-disconnect-button {
+  order: 99;
+}
+
+.tray-divider {
+  width: 1px;
+  height: 24px;
+  background-color: rgba(255, 255, 255, 0.12);
+  margin: 0 2px;
+}
+
+/* Anchors a popover (the reactions picker, the raise-hand "who's up"
+   list, the More menu) directly above whichever tray button owns it. */
+.tray-item-with-popover {
+  position: relative;
+}
+
+.tray-popover {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  background-color: var(--color-surface-1);
+  color: var(--color-text-primary);
+  border-radius: var(--radius-md);
+  padding: 10px;
+  white-space: nowrap;
+}
+
+/* RaiseHandControl renders its own panel-surface div (reused as-is, see
+   RaiseHandControl.tsx) — this positions THAT div as a popover above the
+   raise-hand tray button, the same slot .tray-popover occupies for
+   reactions/More, without needing to touch RaiseHandControl's own
+   className (it's shared with other call sites that don't want popover
+   positioning applied). */
+.tray-popover-anchor {
+  position: relative;
+}
+
+.tray-popover-anchor > div {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  white-space: nowrap;
+  min-width: 200px;
+}
+
+.more-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 220px;
+  padding: 6px;
+}
+
+.more-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  text-align: left;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.more-menu-item:hover {
+  background-color: var(--color-surface-2);
+}
+
+/* Icon dimmed relative to the label — the standard "muted icon, full-
+   brightness text" menu-row convention (Notion/Linear/GitHub context
+   menus), rather than every icon matching the label's own full-white
+   color. Left off the three reskinned controls below on purpose: those
+   manage their own icon color (e.g. MeetingLockControl's ember-when-
+   locked cue), which this would otherwise override. */
+.more-menu-item svg {
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+}
+
+/* Re-skins MeetingLockControl/WhiteboardControl/PictureInPictureControl's
+   own existing buttons (unchanged internally — see CallSidePanel.tsx's
+   own comment) from a standalone circle/pill into a full-width menu row,
+   matching .more-menu-item's own look, when nested inside .more-menu. */
+.more-menu [data-testid="meeting-lock-control"] button,
+.more-menu [data-testid="whiteboard-control"] > button {
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+  padding: 9px 10px;
+  font-size: 13px;
+  background-color: transparent;
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+.more-menu [data-testid="meeting-lock-control"] button:hover,
+.more-menu [data-testid="whiteboard-control"] > button:hover {
+  background-color: var(--color-surface-2);
+}
+
+.more-menu [data-testid="picture-in-picture-control"] {
+  background: transparent;
+  padding: 0;
+}
+
+.more-menu [data-testid="picture-in-picture-control"] button {
+  width: 100%;
+  text-align: left;
+  padding: 9px 10px;
+  border-radius: 8px;
+}
+
+.more-menu [data-testid="picture-in-picture-control"] button:hover {
+  background-color: var(--color-surface-2);
+}
+
+/*
+ * The /rooms dashboard (RoomsSidebar, DashboardStats, UpNextCard,
+ * RoomList, TemplateManager, CreateRoomForm, JoinByCodeForm) — a
+ * glassmorphism treatment (floating blurred blob background, translucent
+ * cards) built on the SAME graphite/ember tokens as the in-call theme
+ * above — no new colors, just glass surfaces instead of flat ones.
+ * Scoped to app/rooms/page.tsx only (never the call screen itself).
+ */
+
+/* Fixed, blurred, animated blobs behind the whole dashboard. Ember +
+   graphite hues only (no purple/indigo) — kept at low opacity so it reads
+   as texture, never fights with foreground content for attention. */
+.dash-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  background-color: var(--color-surface-0);
+}
+
+.dash-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(90px);
+}
+
+.dash-blob-1 {
+  top: -12%;
+  left: -8%;
+  width: 46vw;
+  height: 46vw;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.09) 0%, rgba(255, 255, 255, 0) 70%);
+  animation: dash-blob-float 18s infinite alternate;
+}
+
+.dash-blob-2 {
+  bottom: -18%;
+  right: -10%;
+  width: 52vw;
+  height: 52vw;
+  background: radial-gradient(circle, rgba(68, 68, 65, 0.5) 0%, rgba(68, 68, 65, 0) 70%);
+  animation: dash-blob-float 22s infinite alternate-reverse;
+}
+
+.dash-blob-3 {
+  top: 35%;
+  left: 35%;
+  width: 34vw;
+  height: 34vw;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0) 70%);
+}
+
+@keyframes dash-blob-float {
+  0% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(3%, -4%) scale(1.08); }
+  100% { transform: translate(-3%, 3%) scale(0.95); }
+}
+
+.dash-shell {
+  display: flex;
+  height: 100vh;
+  gap: 14px;
+  padding: 14px;
+  color: var(--color-text-primary);
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.dash-glass {
+  background: rgba(255, 255, 255, 0.035);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-top-color: rgba(255, 255, 255, 0.1);
+}
+
+.dash-sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  border-radius: 20px;
+  padding: 20px 16px 20px;
+  display: flex;
+  flex-direction: column;
+}
+
+.dash-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  border-radius: 20px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Below tablet width, the sidebar becomes a horizontal top bar (icons
+   still labeled, nothing hidden) instead of squeezing the main content
+   into a narrow leftover column — the fixed-width side rail only makes
+   sense once there's enough viewport for both it and real content. */
+@media (max-width: 768px) {
+  .dash-shell {
+    flex-direction: column;
+    padding: 12px;
+    gap: 12px;
+  }
+
+  .dash-sidebar {
+    width: 100%;
+    flex-direction: row;
+    align-items: center;
+    border-radius: 18px;
+    padding: 10px 14px;
+    gap: 4px;
+  }
+
+  .dash-sidebar > .flex-1 {
+    display: none;
+  }
+}
+
+.dash-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  text-align: left;
+  width: 100%;
+  border: 1px solid transparent;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.dash-nav-item:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.06);
+  color: var(--color-text-primary);
+}
+
+.dash-nav-item-active {
+  background-color: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: var(--color-text-primary);
+}
+
+.dash-card {
+  background: rgba(255, 255, 255, 0.035);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-top-color: rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 16px;
+  transition: background-color 0.3s ease, border-color 0.3s ease, transform 0.3s ease;
+}
+
+.dash-card-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.dash-stat-card {
+  background: rgba(255, 255, 255, 0.035);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-top-color: rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.dash-stat-card-primary {
+  background: linear-gradient(135deg, #f2f2f0, #d9d9d6);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+/* Quick-action cards (New meeting / Join meeting / Templates) — the same
+   glass card, but hoverable like the reference mockup's action tiles. */
+.dash-quick-card {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-top-color: rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+.dash-quick-card:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.dash-quick-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: var(--color-text-primary);
+  flex-shrink: 0;
+}
+
+.dash-input {
+  background-color: rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 9px 12px;
+  color: var(--color-text-primary);
+  font-size: 14px;
+  backdrop-filter: blur(8px);
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.dash-input:focus {
+  outline: none;
+  background-color: rgba(0, 0, 0, 0.35);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.dash-input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.dash-button-primary {
+  background-color: #f0f0ee;
+  color: var(--color-surface-0);
+  border-radius: 10px;
+  padding: 9px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  transition: filter 0.2s ease, transform 0.2s ease;
+}
+
+.dash-button-primary:hover:not(:disabled) {
+  filter: brightness(0.94);
+}
+
+.dash-button-secondary {
+  background-color: rgba(255, 255, 255, 0.06);
+  color: var(--color-text-primary);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 9px 16px;
+  font-size: 14px;
+  transition: background-color 0.2s ease;
+}
+
+.dash-button-secondary:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.dash-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background-color: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--color-text-primary);
+  border-radius: 999px;
+  padding: 6px 8px 6px 12px;
+  font-size: 12px;
+}
+
+.dash-chip-remove {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  border-radius: 999px;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dash-chip-remove:hover {
+  background-color: rgba(255, 255, 255, 0.12);
+  color: var(--color-text-primary);
+}
+
+.dash-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 4px;
+  border-radius: 12px;
+  transition: background-color 0.2s ease;
+}
+
+.dash-row:hover {
+  background-color: rgba(255, 255, 255, 0.04);
+}
+
+.dash-row + .dash-row {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.dash-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+.dash-status-active {
+  background-color: #5dcaa5;
+  box-shadow: 0 0 8px rgba(93, 202, 165, 0.6);
+}
+
+.dash-status-scheduled {
+  background-color: #ef9f27;
+  box-shadow: 0 0 8px rgba(239, 159, 39, 0.5);
+}
+
+.dash-status-ended {
+  background-color: var(--color-surface-3);
+}
+
+/* The dashboard's own scrollable content area renders the BROWSER's
+   default scrollbar otherwise — stark white/light on this dark glass
+   theme. Thin + translucent so it reads as part of the UI, not a stray
+   OS control. */
+.dash-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.dash-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.dash-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dash-scroll::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+}
+
+.dash-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.28);
+}
