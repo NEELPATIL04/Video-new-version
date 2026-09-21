@@ -77,10 +77,11 @@ test.describe.serial("raise hand", () => {
     // flow as every other real join (see waiting-room.spec.ts).
     await guestAPage.goto(roomUrl);
     await expect(guestAPage.getByText("Waiting for the host to let you in")).toBeVisible({ timeout: 10_000 });
-    // WaitingRoomHostPanel lives inside CallSidePanel's "People" drawer
-    // section now, not its own always-visible floating panel — open it
-    // via the rail before it's reachable.
-    await hostPage.getByTestId("rail-people").click();
+    // WaitingRoomHostPanel lives inside CallSidePanel's "More" menu's
+    // People drawer section now, not its own always-visible floating
+    // panel — open it via the tray's "More" trigger before it's reachable.
+    await hostPage.getByTestId("more-menu-toggle").click();
+    await hostPage.getByTestId("more-menu-people").click();
     const waitingPanel = hostPage.getByTestId("waiting-room-host-panel");
     await expect(waitingPanel.getByRole("listitem").filter({ hasText: nameGuestA })).toBeVisible({
       timeout: 10_000,
@@ -123,6 +124,8 @@ test.describe.serial("raise hand", () => {
 
     await guestBPage.goto(roomUrl);
     await expect(guestBPage.getByText("Waiting for the host to let you in")).toBeVisible({ timeout: 10_000 });
+    await hostPage.getByTestId("more-menu-toggle").click();
+    await hostPage.getByTestId("more-menu-people").click();
     const waitingPanel = hostPage.getByTestId("waiting-room-host-panel");
     await expect(waitingPanel.getByRole("listitem").filter({ hasText: nameGuestB })).toBeVisible({
       timeout: 10_000,

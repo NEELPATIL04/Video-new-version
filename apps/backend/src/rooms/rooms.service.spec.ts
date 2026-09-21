@@ -59,6 +59,7 @@ describe('RoomsService', () => {
     createAccessToken: jest.Mock;
     getUrl: jest.Mock;
     setHandRaised: jest.Mock;
+    isIdentityConnected: jest.Mock;
   };
 
   const makeRoom = (overrides: Record<string, unknown> = {}) => ({
@@ -127,6 +128,12 @@ describe('RoomsService', () => {
       createAccessToken: jest.fn().mockResolvedValue('signed-token'),
       getUrl: jest.fn().mockReturnValue('ws://localhost:7880'),
       setHandRaised: jest.fn(),
+      // Default "not connected elsewhere" — every existing joinRoom test
+      // that mocks an already-admitted participant (locked-room re-entry,
+      // host self-join, etc.) exercises this path now too, so it needs a
+      // safe default that preserves their existing "resolves to a real
+      // result" behavior rather than throwing on an unmocked call.
+      isIdentityConnected: jest.fn().mockResolvedValue(false),
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -636,6 +643,117 @@ describe('RoomsService', () => {
         roomId: 'room-1',
         role: 'participant',
       });
+    });
+
+    it('returns "already-connected" instead of a token when this identity is already live in LiveKit', async () => {
+      prisma.room.findUnique.mockResolvedValue(
+        makeRoom({ status: 'active', maxParticipants: 10 }),
+      );
+      prisma.participant.count.mockResolvedValue(1);
+      prisma.participant.findUnique.mockResolvedValue({ id: 'p-3' });
+      prisma.participant.upsert.mockResolvedValue({
+        id: 'p-3',
+        userId: 'user-3',
+        role: 'participant',
+        admittedAt: new Date(),
+        user: { name: 'User Three' },
+      });
+      liveKit.isIdentityConnected.mockResolvedValue(true);
+
+      const result = await service.joinRoom('room-1', 'user-3');
+
+      expect(result).toEqual({
+        status: 'already-connected',
+        participant: expect.objectContaining({ id: 'p-3' }),
+      });
+      expect(liveKit.isIdentityConnected).toHaveBeenCalledWith(
+        'room-1',
+        'user-3',
+      );
+      expect(liveKit.createAccessToken).not.toHaveBeenCalled();
+    });
+
+    it('proceeds with the join (fails open) when the isIdentityConnected check itself throws', async () => {
+      // This is a courtesy check, not a security check — a LiveKit
+      // admin-API outage/timeout must never block an already-admitted
+      // participant from joining their own meeting. See joinRoom's own
+      // comment for the full reasoning.
+      prisma.room.findUnique.mockResolvedValue(
+        makeRoom({ status: 'active', maxParticipants: 10 }),
+      );
+      prisma.participant.count.mockResolvedValue(1);
+      prisma.participant.findUnique.mockResolvedValue({ id: 'p-3' });
+      prisma.participant.upsert.mockResolvedValue({
+        id: 'p-3',
+        userId: 'user-3',
+        role: 'participant',
+        admittedAt: new Date(),
+        user: { name: 'User Three' },
+      });
+      liveKit.isIdentityConnected.mockRejectedValue(
+        new Error('LiveKit admin API timed out'),
+      );
+
+      const result = await service.joinRoom('room-1', 'user-3');
+
+      expect(result).toEqual({
+        status: 'admitted',
+        participant: expect.objectContaining({ id: 'p-3' }),
+        liveKitUrl: 'ws://localhost:7880',
+        liveKitToken: 'signed-token',
+        e2eeEnabled: false,
+      });
+      expect(liveKit.createAccessToken).toHaveBeenCalled();
+    });
+
+    it('force: true proceeds to a real token even when already connected, with role unchanged', async () => {
+      prisma.room.findUnique.mockResolvedValue(
+        makeRoom({ status: 'active', maxParticipants: 10 }),
+      );
+      prisma.participant.count.mockResolvedValue(1);
+      prisma.participant.findUnique.mockResolvedValue({ id: 'p-3' });
+      prisma.participant.upsert.mockResolvedValue({
+        id: 'p-3',
+        userId: 'user-3',
+        role: 'cohost',
+        admittedAt: new Date(),
+        user: { name: 'User Three' },
+      });
+      liveKit.isIdentityConnected.mockResolvedValue(true);
+
+      const result = await service.joinRoom('room-1', 'user-3', true);
+
+      expect(result).toEqual({
+        status: 'admitted',
+        participant: expect.objectContaining({ id: 'p-3', role: 'cohost' }),
+        liveKitUrl: 'ws://localhost:7880',
+        liveKitToken: 'signed-token',
+        e2eeEnabled: false,
+      });
+      expect(liveKit.isIdentityConnected).not.toHaveBeenCalled();
+      expect(liveKit.createAccessToken).toHaveBeenCalledWith(
+        expect.objectContaining({ role: 'cohost' }),
+      );
+    });
+
+    it('never checks LiveKit for a not-yet-admitted participant — the waiting path is untouched', async () => {
+      prisma.room.findUnique.mockResolvedValue(
+        makeRoom({ status: 'active', maxParticipants: 10 }),
+      );
+      prisma.participant.count.mockResolvedValue(0);
+      prisma.participant.findUnique.mockResolvedValue(null);
+      prisma.participant.upsert.mockResolvedValue({
+        id: 'p-3',
+        userId: 'user-3',
+        role: 'participant',
+        admittedAt: null,
+        user: { name: 'User Three' },
+      });
+
+      const result = await service.joinRoom('room-1', 'user-3');
+
+      expect(result.status).toBe('waiting');
+      expect(liveKit.isIdentityConnected).not.toHaveBeenCalled();
     });
 
     it('never touches admittedAt on the update branch — a reconnect keeps existing admission state', async () => {

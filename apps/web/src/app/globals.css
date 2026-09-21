@@ -116,7 +116,19 @@ body {
  */
 .video-stage {
   display: flex;
+  flex-direction: row;
+  height: 100%;
+}
+
+/* The video grid + tray column — a sibling of .video-stage-chat below
+   when chat is open, so chat sits as a proper side panel (matching
+   VideoConference's own row layout: video area | chat) instead of
+   overlapping the grid. */
+.video-stage-main {
+  display: flex;
   flex-direction: column;
+  flex: 1;
+  min-width: 0;
   height: 100%;
 }
 
@@ -124,6 +136,18 @@ body {
   flex: 1;
   min-height: 0;
   position: relative;
+}
+
+/* LiveKit's own .lk-chat already inherits this app's graphite/ember
+   theme for free (data-lk-theme="default"'s --lk-bg2/--lk-accent-bg/etc.
+   remapping above already covers it) — this only fixes its WIDTH to
+   match this app's other side panels (CallSidePanel's drawer is w-80/
+   320px) instead of the default clamp(200px,55ch,60ch), which would
+   read as oversized here. */
+.video-stage-chat {
+  flex-shrink: 0;
+  width: 320px;
+  height: 100%;
 }
 
 /* The literal gap between the video grid and the tray, matching the
@@ -187,6 +211,7 @@ body {
 }
 
 .video-stage-tray .lk-button,
+.video-stage-tray .lk-chat-toggle,
 .video-stage-tray .lk-disconnect-button {
   --lk-control-bg: var(--color-surface-3);
   --lk-control-hover-bg: var(--color-surface-3);
@@ -194,8 +219,8 @@ body {
   height: 44px;
   padding: 0;
   gap: 0;
-  /* Hides the "Microphone"/"Camera"/"Share screen"/"Leave" text node
-     visually only — font-size: 0 collapses its rendered glyphs to
+  /* Hides the "Microphone"/"Camera"/"Share screen"/"Chat"/"Leave" text
+     node visually only — font-size: 0 collapses its rendered glyphs to
      nothing without touching the accessibility tree (unlike
      display:none/visibility:hidden, which would also remove the
      button's accessible name). See VideoStage.tsx's own comment for why
@@ -204,6 +229,7 @@ body {
 }
 
 .video-stage-tray .lk-button svg,
+.video-stage-tray .lk-chat-toggle svg,
 .video-stage-tray .lk-disconnect-button svg {
   font-size: 1rem;
 }
@@ -215,6 +241,7 @@ body {
    stylesheet. */
 .video-stage-tray .lk-button,
 .video-stage-tray .lk-button-group > .lk-button,
+.video-stage-tray .lk-chat-toggle,
 .video-stage-tray .lk-disconnect-button {
   border-radius: 9999px !important;
 }
@@ -301,12 +328,19 @@ body {
    raise-hand tray button, the same slot .tray-popover occupies for
    reactions/More, without needing to touch RaiseHandControl's own
    className (it's shared with other call sites that don't want popover
-   positioning applied). */
+   positioning applied).
+   This wrapper itself has to be the positioned element (mirroring
+   .tray-popover above, relative to .tray-item-with-popover) rather than
+   establishing its own nested `position: relative` box for its child —
+   with only an absolutely-positioned child inside it, a `position:
+   relative` wrapper has no in-flow content of its own, so it collapses
+   to zero size and (being a block element) stacks below the button
+   instead of over it. Centering the popover on that collapsed, roughly
+   zero-width box then let it spill sideways far enough to overlap and
+   block whichever tray button came next (More) — a real bug, not just a
+   test-timing issue, since any participant with the "More" menu open
+   next to a raised hand would have hit the same dead click. */
 .tray-popover-anchor {
-  position: relative;
-}
-
-.tray-popover-anchor > div {
   position: absolute;
   bottom: calc(100% + 10px);
   left: 50%;

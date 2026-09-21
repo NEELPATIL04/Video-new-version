@@ -69,9 +69,9 @@ export function RoomList({ rooms, isLoading, error, filtered }: RoomListProps) {
   }
 
   return (
-    <div className="flex flex-col">
+    <ul className="flex flex-col">
       {rooms.map((room) => (
-        <div key={room.id} className="dash-row">
+        <li key={room.id} className="dash-row">
           <Link href={`/rooms/${room.id}`} className="flex items-center gap-3 flex-1 min-w-0 hover:opacity-80">
             <span className={`dash-status-dot ${STATUS_DOT[room.status]}`} aria-hidden="true" />
             <div className="min-w-0">
@@ -108,8 +108,8 @@ export function RoomList({ rooms, isLoading, error, filtered }: RoomListProps) {
               <ScheduledMeetingCalendarLinks roomId={room.id} name={room.name} scheduledFor={room.scheduledFor} />
             )}
           </div>
-        </div>
+        </li>
       ))}
-    </div>
+    </ul>
   );
 }

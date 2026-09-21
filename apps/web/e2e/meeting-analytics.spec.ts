@@ -85,6 +85,12 @@ test.describe.serial("meeting analytics", () => {
     // same real join flow every other call-flow spec exercises.
     await guestPage.goto(roomUrl);
     await expect(guestPage.getByText("Waiting for the host to let you in")).toBeVisible({ timeout: 10_000 });
+    // Behind the tray's "More" menu's People section now, not a
+    // permanently-visible rail icon (see CallSidePanel.tsx) — stays open
+    // for the host-controls Remove click below too, since nothing in
+    // between closes it.
+    await hostPage.getByTestId("more-menu-toggle").click();
+    await hostPage.getByTestId("more-menu-people").click();
     const waitingPanel = hostPage.getByTestId("waiting-room-host-panel");
     await expect(waitingPanel.getByRole("listitem").filter({ hasText: nameGuest })).toBeVisible({
       timeout: 10_000,

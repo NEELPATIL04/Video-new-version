@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma, RoomStatus } from '@prisma/client';
@@ -41,10 +42,16 @@ type JoinResult =
       // silently join with broken, undecryptable media.
       e2eeEnabled: boolean;
     }
-  | { status: 'denied' };
+  | { status: 'denied' }
+  // This account already has a live LiveKit connection in this room
+  // (another device/tab) — see joinRoom's own comment for why this is
+  // checked there and not in buildJoinResult/getParticipantStatus.
+  | { status: 'already-connected'; participant: ParticipantWithUser };
 
 @Injectable()
 export class RoomsService {
+  private readonly logger = new Logger(RoomsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly liveKit: LiveKitService,
@@ -246,7 +253,11 @@ export class RoomsService {
     ]);
   }
 
-  async joinRoom(roomId: string, userId: string): Promise<JoinResult> {
+  async joinRoom(
+    roomId: string,
+    userId: string,
+    force = false,
+  ): Promise<JoinResult> {
     const room = await this.getRoomById(roomId);
     if (room.status === RoomStatus.ended) {
       throw new ConflictException('This meeting has already ended');
@@ -308,6 +319,45 @@ export class RoomsService {
         where: { id: roomId },
         data: { status: RoomStatus.active },
       });
+    }
+
+    // LiveKit access tokens are minted with identity: userId (see
+    // buildJoinResult below) — a bare user id, not per-device. A second
+    // device/tab minting a token under that same identity would silently
+    // kick whatever connection is already live (LiveKit's own duplicate-
+    // identity handling). Checked ONLY here, not inside
+    // buildJoinResult/getParticipantStatus: that helper is also used by
+    // the join-status polling loop an ALREADY-connected participant's own
+    // client runs every few seconds to pick up live role changes — if the
+    // check lived there, that routine self-poll would find its own live
+    // connection and trip this path against itself. `force` is set only
+    // after the client has already shown the caller this exact situation
+    // and they chose to continue here anyway.
+    if (participant.admittedAt && !force) {
+      // Fails OPEN, not closed: this check exists purely to give a
+      // politer experience than LiveKit's own silent duplicate-identity
+      // kick, not to enforce anything security-sensitive — the token
+      // minted below is still fully gated by the admission/role checks
+      // above regardless of this call's outcome. If LiveKit's admin API
+      // is slow or unreachable (bounded by getRoomService's own
+      // requestTimeout so this can't hang indefinitely), an already-
+      // admitted participant must still be able to join their own
+      // meeting rather than being blocked by an outage in a courtesy
+      // check, so any failure here just falls through to the ordinary
+      // join below instead of rethrowing.
+      try {
+        const alreadyConnected = await this.liveKit.isIdentityConnected(
+          room.id,
+          participant.userId,
+        );
+        if (alreadyConnected) {
+          return { status: 'already-connected', participant };
+        }
+      } catch (error) {
+        this.logger.warn(
+          `isIdentityConnected check failed for room ${room.id}, proceeding with join: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
     }
 
     return this.buildJoinResult(room, participant);

@@ -89,6 +89,31 @@ export default function RoomCallPage() {
     );
   }
 
+  if (joinResult!.status === "already-connected") {
+    return (
+      <main className="flex flex-col items-center justify-center flex-1 gap-4">
+        <p className="text-sm text-gray-700">This account is already connected to this meeting.</p>
+        <div className="flex gap-4">
+          <button
+            onClick={() =>
+              joinRoom(id, accessToken!, true)
+                .then(setJoinResult)
+                .catch((err) =>
+                  setError(err instanceof ApiError ? err.message : "Couldn't join this meeting"),
+                )
+            }
+            className="text-sm font-medium underline"
+          >
+            Continue here
+          </button>
+          <button onClick={() => router.push("/rooms")} className="text-sm underline text-gray-500">
+            Cancel
+          </button>
+        </div>
+      </main>
+    );
+  }
+
   // The room requires an encryption key this participant doesn't have —
   // e.g. they joined via the 9-digit code, which can't carry a URL
   // fragment, or opened a link with the fragment stripped. Refusing to

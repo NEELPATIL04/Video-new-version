@@ -75,6 +75,10 @@ test.describe.serial("co-host", () => {
     // as every other real join (see waiting-room.spec.ts).
     await guestPage.goto(roomUrl);
     await expect(guestPage.getByText("Waiting for the host to let you in")).toBeVisible({ timeout: 10_000 });
+    // Behind the tray's "More" menu's People section now, not a
+    // permanently-visible rail icon (see CallSidePanel.tsx).
+    await hostPage.getByTestId("more-menu-toggle").click();
+    await hostPage.getByTestId("more-menu-people").click();
     const waitingPanel = hostPage.getByTestId("waiting-room-host-panel");
     await expect(waitingPanel.getByRole("listitem").filter({ hasText: nameGuest })).toBeVisible({
       timeout: 10_000,
@@ -96,12 +100,20 @@ test.describe.serial("co-host", () => {
   });
 
   test("the co-host control is visible to the host and lists the guest", async () => {
+    // Behind the tray's "More" menu's Co-hosts section now (see
+    // CallSidePanel.tsx) — stays open across the following tests since
+    // nothing in between closes it, but each test re-clicks it anyway to
+    // stay self-contained (idempotent regardless of prior menu state).
+    await hostPage.getByTestId("more-menu-toggle").click();
+    await hostPage.getByTestId("more-menu-cohosts").click();
     const coHostPanel = hostPage.getByTestId("co-host-control");
     await expect(coHostPanel).toBeVisible({ timeout: 10_000 });
     await expect(coHostPanel.getByRole("listitem").filter({ hasText: nameGuest })).toBeVisible();
   });
 
   test("promoting the guest unlocks host panels for them WITHOUT a refresh or reconnect", async () => {
+    await hostPage.getByTestId("more-menu-toggle").click();
+    await hostPage.getByTestId("more-menu-cohosts").click();
     const coHostPanel = hostPage.getByTestId("co-host-control");
     await coHostPanel
       .getByRole("listitem")
@@ -123,8 +135,26 @@ test.describe.serial("co-host", () => {
     // return null`), which is the correct, existing behavior and true in
     // this test regardless of canManage — asserting it here would test
     // the wrong thing.
-    await expect(guestPage.getByTestId("host-controls")).toBeVisible({ timeout: 8_000 });
-    await expect(guestPage.getByTestId("meeting-lock-control")).toBeVisible({ timeout: 3_000 });
+    //
+    // Two DIFFERENT menu states, checked in order: MeetingLockControl
+    // renders directly inside the open "More" dropdown itself (not a
+    // drawer section — see CallSidePanel.tsx), so it's checked with the
+    // dropdown open and BEFORE picking a section, which would close it.
+    // HostControls lives behind the People section instead, so that's
+    // checked after navigating there (canManage just flipped true for
+    // this participant via polling, but their OWN activeSection doesn't
+    // auto-follow that — they still have to open it themselves, exactly
+    // like a real promoted user would).
+    // more-menu-toggle itself isn't gated on canManage (it's always
+    // rendered), so clicking it doesn't wait for anything — the real
+    // "give the 5s poll time to land" wait has to happen on the FIRST
+    // canManage-gated element checked afterward, which is
+    // meeting-lock-control here (checked before host-controls, since
+    // opening the People section would close this dropdown).
+    await guestPage.getByTestId("more-menu-toggle").click();
+    await expect(guestPage.getByTestId("meeting-lock-control")).toBeVisible({ timeout: 8_000 });
+    await guestPage.getByTestId("more-menu-people").click();
+    await expect(guestPage.getByTestId("host-controls")).toBeVisible({ timeout: 3_000 });
 
     // But NOT the co-host control itself — that stays owner-only even
     // for an active co-host.
@@ -136,7 +166,10 @@ test.describe.serial("co-host", () => {
     // "Mute" action on the host's tile must actually mute the host's
     // published audio track. HostControls renders the LIVE LiveKit
     // participant list, so the guest (now a co-host) sees the host's own
-    // tile there too.
+    // tile there too. Re-opens People explicitly rather than relying on
+    // it staying open from the previous test — idempotent regardless.
+    await guestPage.getByTestId("more-menu-toggle").click();
+    await guestPage.getByTestId("more-menu-people").click();
     const controls = guestPage.getByTestId("host-controls");
     await expect(controls.getByRole("listitem").filter({ hasText: nameHost })).toBeVisible({
       timeout: 5_000,

@@ -82,10 +82,14 @@ test.describe.serial("waiting room", () => {
     await expect(guestPage.getByText("Waiting for the host to let you in")).toBeVisible({ timeout: 10_000 });
     await expect(guestPage.getByRole("button", { name: /Leave/i })).not.toBeVisible();
 
-    // Host sees them show up in the waiting room panel. Scoped to the
-    // waiting-room panel specifically (data-testid) rather than a bare
-    // listitem — CallRoom also renders HostControls' own <li> list
-    // alongside this one once anyone is actually connected to LiveKit.
+    // Host sees them show up in the waiting room panel — behind the
+    // tray's "More" menu's People section now, not a permanently-visible
+    // rail icon (see CallSidePanel.tsx). Scoped to the waiting-room panel
+    // specifically (data-testid) rather than a bare listitem — CallRoom
+    // also renders HostControls' own <li> list alongside this one once
+    // anyone is actually connected to LiveKit.
+    await hostPage.getByTestId("more-menu-toggle").click();
+    await hostPage.getByTestId("more-menu-people").click();
     const waitingPanel = hostPage.getByTestId("waiting-room-host-panel");
     await expect(hostPage.getByText("Waiting room (1)")).toBeVisible({ timeout: 10_000 });
     await expect(waitingPanel.getByRole("listitem").filter({ hasText: nameGuestA })).toBeVisible();
@@ -112,6 +116,8 @@ test.describe.serial("waiting room", () => {
     await guestPage.goto(roomUrl);
     await expect(guestPage.getByText("Waiting for the host to let you in")).toBeVisible({ timeout: 10_000 });
 
+    await hostPage.getByTestId("more-menu-toggle").click();
+    await hostPage.getByTestId("more-menu-people").click();
     const waitingPanel = hostPage.getByTestId("waiting-room-host-panel");
     await expect(waitingPanel.getByRole("listitem").filter({ hasText: nameGuestB })).toBeVisible({ timeout: 10_000 });
     await waitingPanel.getByRole("listitem").filter({ hasText: nameGuestB }).getByRole("button", { name: "Deny" }).click();

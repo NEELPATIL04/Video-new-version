@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ExternalE2EEKeyProvider, type DisconnectReason } from "livekit-client";
+import { DisconnectReason, ExternalE2EEKeyProvider } from "livekit-client";
 import { LiveKitRoom } from "@livekit/components-react";
 import { getJoinStatus, type Participant } from "../api";
 import { useAuthStore } from "@/features/auth/store";
@@ -62,6 +62,12 @@ export function CallRoom({
   const router = useRouter();
   const accessToken = useAuthStore((s) => s.accessToken);
   const [e2eeError, setE2eeError] = useState<string | null>(null);
+  // Set when THIS connection is the one LiveKit kicks because the same
+  // account joined from another device/tab — see the default
+  // onDisconnected below. Distinct from a normal leave/removal (which
+  // still just exits to /rooms) so the kicked-out device gets an honest
+  // explanation instead of a silent bounce.
+  const [duplicateKick, setDuplicateKick] = useState(false);
 
   // Polls join-status (already used by WaitingRoom while pending) every
   // few seconds so a host promoting/demoting someone mid-call visibly
@@ -156,6 +162,20 @@ export function CallRoom({
     );
   }
 
+  if (duplicateKick) {
+    return (
+      <main className="flex flex-col items-center justify-center flex-1 gap-4" style={{ height: "100vh" }}>
+        <p className="text-sm text-gray-300">
+          You joined this meeting from another device or browser tab, so you were disconnected
+          here.
+        </p>
+        <button onClick={() => router.push("/rooms")} className="underline text-sm">
+          Back to meetings
+        </button>
+      </main>
+    );
+  }
+
   return (
     <LiveKitRoom
       serverUrl={liveKitUrl}
@@ -164,7 +184,16 @@ export function CallRoom({
       data-lk-theme="default"
       style={{ height: "100vh", position: "relative" }}
       options={e2ee ? { e2ee } : undefined}
-      onDisconnected={onDisconnected ?? (() => router.push("/rooms"))}
+      onDisconnected={
+        onDisconnected ??
+        ((reason?: DisconnectReason) => {
+          if (reason === DisconnectReason.DUPLICATE_IDENTITY) {
+            setDuplicateKick(true);
+            return;
+          }
+          router.push("/rooms");
+        })
+      }
       onEncryptionError={() =>
         setE2eeError(
           "An encryption error occurred — this usually means someone in the call has a different key.",

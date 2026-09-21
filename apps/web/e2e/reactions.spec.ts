@@ -71,6 +71,10 @@ test.describe.serial("reactions", () => {
     // as every other real join (see waiting-room.spec.ts).
     await guestPage.goto(roomUrl);
     await expect(guestPage.getByText("Waiting for the host to let you in")).toBeVisible({ timeout: 10_000 });
+    // Behind the tray's "More" menu's People section now, not a
+    // permanently-visible rail icon (see CallSidePanel.tsx).
+    await hostPage.getByTestId("more-menu-toggle").click();
+    await hostPage.getByTestId("more-menu-people").click();
     const waitingPanel = hostPage.getByTestId("waiting-room-host-panel");
     await expect(waitingPanel.getByRole("listitem").filter({ hasText: nameGuest })).toBeVisible({
       timeout: 10_000,
@@ -85,6 +89,11 @@ test.describe.serial("reactions", () => {
   });
 
   test("a reaction sent by one participant appears on the other participant's page", async () => {
+    // Reactions collapsed behind their own toggle + popover now (not a
+    // permanently-visible 5-emoji row) — see ReactionsControl.tsx. The
+    // popover auto-closes after every send, so each reaction needs its
+    // own fresh toggle click, unlike the "More" dropdown's controls.
+    await hostPage.getByTestId("reactions-toggle").click();
     await hostPage.getByRole("button", { name: "🎉" }).click();
 
     // The real proof: it shows up on the GUEST's page, delivered via
@@ -102,15 +111,24 @@ test.describe.serial("reactions", () => {
   });
 
   test("a reaction works in the other direction too", async () => {
+    await guestPage.getByTestId("reactions-toggle").click();
     await guestPage.getByRole("button", { name: "👍" }).click();
     await expect(hostPage.getByText(`👍 ${nameGuest}`)).toBeVisible({ timeout: 5_000 });
   });
 
   test("the send cooldown prevents spamming the same reaction repeatedly", async () => {
+    await hostPage.getByTestId("reactions-toggle").click();
+    await hostPage.getByRole("button", { name: "❤️" }).click();
+
+    // handleSend closes the popover right after a successful send (see
+    // ReactionsControl.tsx) — the button that was just clicked is gone
+    // from the DOM by now, so observing the cooldown means reopening the
+    // picker, same as every other reaction send in this suite.
+    await hostPage.getByTestId("reactions-toggle").click();
     const button = hostPage.getByRole("button", { name: "❤️" });
-    await button.click();
-    // Immediately disabled — the cooldown is a real UI state, not just a
-    // theoretical rate limit.
+    // Still on cooldown — the picker reopened well within the 1.5s
+    // window, so this is a real UI state, not just a theoretical rate
+    // limit.
     await expect(button).toBeDisabled();
     await expect(button).toBeEnabled({ timeout: 3_000 });
   });

@@ -38,6 +38,16 @@ interface CallSidePanelProps {
   roomId: string;
   canManage: boolean;
   isHost: boolean;
+  // The drawer below is `fixed ... right-4 w-80` — the same rightmost
+  // ~336px of the viewport .video-stage-chat occupies when chat is open
+  // (also 320px wide, flush to the edge, see globals.css). Without this,
+  // opening any section while chat is open renders the drawer directly
+  // on top of the chat panel. Shifts the drawer's own right offset past
+  // chat's width instead, rather than making the two mutually exclusive
+  // — a participant should be able to check the agenda/poll/people list
+  // while still keeping chat open, the same way they could before chat
+  // was reachable at all.
+  showChat: boolean;
 }
 
 // A single "More" trigger + dropdown menu, replacing what used to be an
@@ -50,7 +60,7 @@ interface CallSidePanelProps {
 // changes how each one is reached. The drawer (one section's content at
 // a time, never overlapping) is unchanged from the previous rail-based
 // version.
-export function CallSidePanel({ roomId, canManage, isHost }: CallSidePanelProps) {
+export function CallSidePanel({ roomId, canManage, isHost, showChat }: CallSidePanelProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeSection, setActiveSection] = useState<Section | null>(null);
 
@@ -118,7 +128,7 @@ export function CallSidePanel({ roomId, canManage, isHost }: CallSidePanelProps)
       {activeSection && (
         <div
           data-testid="call-side-drawer"
-          className="fixed top-20 bottom-20 right-4 z-20 w-80 drawer-surface p-4 overflow-y-auto flex flex-col gap-4"
+          className={`fixed top-20 bottom-20 z-20 w-80 drawer-surface p-4 overflow-y-auto flex flex-col gap-4 ${showChat ? "right-[340px]" : "right-4"}`}
         >
           <div className="flex items-center justify-between">
             <p className="font-medium">{sectionTitle[activeSection]}</p>

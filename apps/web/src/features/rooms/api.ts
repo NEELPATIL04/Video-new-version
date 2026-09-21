@@ -59,7 +59,10 @@ export type JoinRoomResponse =
       // don't have" before it ever tries to connect.
       e2eeEnabled: boolean;
     }
-  | { status: "denied" };
+  | { status: "denied" }
+  // This account already has a live LiveKit connection in this room
+  // (another device/tab) — see joinRoom's own `force` param.
+  | { status: "already-connected"; participant: Participant };
 
 export function createRoom(
   input: {
@@ -93,8 +96,15 @@ export function getRoomByCode(code: string, accessToken: string) {
   return apiFetch<Room>(`/rooms/by-code/${encodeURIComponent(code)}`, { accessToken });
 }
 
-export function joinRoom(id: string, accessToken: string) {
-  return apiFetch<JoinRoomResponse>(`/rooms/${id}/join`, { method: "POST", accessToken });
+// `force`: set true only after the caller has already been shown an
+// "already connected elsewhere" prompt (status "already-connected"
+// below) and chose to continue here anyway.
+export function joinRoom(id: string, accessToken: string, force = false) {
+  return apiFetch<JoinRoomResponse>(`/rooms/${id}/join`, {
+    method: "POST",
+    accessToken,
+    ...(force ? { body: { force: true } } : {}),
+  });
 }
 
 // Polled by a waiting participant's client to find out once the host has
