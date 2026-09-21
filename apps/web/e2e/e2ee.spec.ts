@@ -98,6 +98,10 @@ test.describe.serial("end-to-end encryption", () => {
 
     await guestPage.goto(roomUrlWithKey);
     await expect(guestPage.getByText("Waiting for the host to let you in")).toBeVisible({ timeout: 10_000 });
+    // Behind the tray's "More" menu's People section now, not a
+    // permanently-visible rail icon (see CallSidePanel.tsx).
+    await hostPage.getByTestId("more-menu-toggle").click();
+    await hostPage.getByTestId("more-menu-people").click();
     const waitingPanel = hostPage.getByTestId("waiting-room-host-panel");
     await expect(waitingPanel.getByRole("listitem").filter({ hasText: nameGuest })).toBeVisible({
       timeout: 10_000,

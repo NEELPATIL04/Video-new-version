@@ -87,6 +87,10 @@ test.describe.serial("breakout rooms", () => {
     roomId = new URL(roomUrl).pathname.split("/").pop()!;
     await expect(hostPage.getByRole("button", { name: /Leave/i })).toBeVisible({ timeout: 15_000 });
 
+    // Behind the tray's "More" menu's People section now, not a
+    // permanently-visible rail icon (see CallSidePanel.tsx).
+    await hostPage.getByTestId("more-menu-toggle").click();
+    await hostPage.getByTestId("more-menu-people").click();
     const waitingPanel = hostPage.getByTestId("waiting-room-host-panel");
 
     // Guest A joins and is admitted.
@@ -120,12 +124,20 @@ test.describe.serial("breakout rooms", () => {
   });
 
   test("the breakout rooms panel is host-only", async () => {
+    // Behind the tray's "More" menu's Breakout rooms section now, not a
+    // permanently-visible rail icon (see CallSidePanel.tsx) — guests
+    // don't even have this menu item at all (canManage/isHost-gated), so
+    // their own "not visible" checks below hold regardless of menu state.
+    await hostPage.getByTestId("more-menu-toggle").click();
+    await hostPage.getByTestId("more-menu-breakout").click();
     await expect(hostPage.getByTestId("breakout-rooms-host-panel")).toBeVisible({ timeout: 5_000 });
     await expect(guestAPage.getByTestId("breakout-rooms-host-panel")).not.toBeVisible();
     await expect(guestBPage.getByTestId("breakout-rooms-host-panel")).not.toBeVisible();
   });
 
   test("host splits guests into two separate breakout rooms, each a genuinely distinct LiveKit room", async () => {
+    await hostPage.getByTestId("more-menu-toggle").click();
+    await hostPage.getByTestId("more-menu-breakout").click();
     const panel = hostPage.getByTestId("breakout-rooms-host-panel");
 
     // Default room count is already 2 — assign guest A to Room 1, guest B
@@ -198,6 +210,8 @@ test.describe.serial("breakout rooms", () => {
   });
 
   test("ending breakout rooms brings both guests back to the main room on their own", async () => {
+    await hostPage.getByTestId("more-menu-toggle").click();
+    await hostPage.getByTestId("more-menu-breakout").click();
     const panel = hostPage.getByTestId("breakout-rooms-host-panel");
     await panel.getByRole("button", { name: "End breakout rooms" }).click();
 

@@ -112,6 +112,10 @@ test.describe.serial("call flow", () => {
     // than a bare listitem — HostControls renders its own <li> list too,
     // and once B is admitted and connects, both could momentarily show
     // B's name at once, making an unscoped listitem locator ambiguous.
+    // Behind the tray's "More" menu's People section now, not a
+    // permanently-visible rail icon (see CallSidePanel.tsx).
+    await pageA.getByTestId("more-menu-toggle").click();
+    await pageA.getByTestId("more-menu-people").click();
     const waitingPanel = pageA.getByTestId("waiting-room-host-panel");
     await expect(waitingPanel.getByRole("listitem").filter({ hasText: nameB })).toBeVisible({ timeout: 10_000 });
     await waitingPanel.getByRole("listitem").filter({ hasText: nameB }).getByRole("button", { name: "Admit" }).click();
@@ -180,6 +184,8 @@ test.describe.serial("call flow", () => {
     // host-controls panel (data-testid) rather than a bare listitem —
     // WaitingRoomHostPanel's own <li> list is empty by this point (B is
     // long admitted), but staying scoped keeps this robust regardless.
+    await pageA.getByTestId("more-menu-toggle").click();
+    await pageA.getByTestId("more-menu-people").click();
     await pageA
       .getByTestId("host-controls")
       .getByRole("listitem")
@@ -204,6 +210,8 @@ test.describe.serial("call flow", () => {
   });
 
   test("host can remove a participant, who is then disconnected from the call", async () => {
+    await pageA.getByTestId("more-menu-toggle").click();
+    await pageA.getByTestId("more-menu-people").click();
     await pageA
       .getByTestId("host-controls")
       .getByRole("listitem")

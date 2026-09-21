@@ -2,6 +2,20 @@ import { test, expect, type Page, type BrowserContext } from "@playwright/test";
 
 type StorageState = Awaited<ReturnType<BrowserContext["storageState"]>>;
 
+// MeetingLockControl renders directly inside the "More" dropdown itself
+// (not behind a drawer section — see CallSidePanel.tsx), and nothing
+// closes that dropdown except picking a section or clicking the toggle
+// again. A blind, unconditional toggle click is therefore NOT idempotent
+// here (unlike the toggle+section pattern other specs use, which always
+// ends with the dropdown closed): if a previous test left it open, a
+// second blind click would close it. Check first, open only if needed.
+async function ensureMoreMenuOpen(page: Page) {
+  const isOpen = await page.getByTestId("more-menu").isVisible().catch(() => false);
+  if (!isOpen) {
+    await page.getByTestId("more-menu-toggle").click();
+  }
+}
+
 // The real question this suite answers: does locking a meeting actually
 // block the join REQUEST at the backend (a genuinely new joiner never
 // reaches the call, gets told why), while still letting someone who's
@@ -76,6 +90,10 @@ test.describe.serial("meeting lock", () => {
     // participant used later to prove the lock doesn't affect reconnects.
     await guestAPage.goto(roomUrl);
     await expect(guestAPage.getByText("Waiting for the host to let you in")).toBeVisible({ timeout: 10_000 });
+    // Behind the tray's "More" menu's People section now, not a
+    // permanently-visible rail icon (see CallSidePanel.tsx).
+    await hostPage.getByTestId("more-menu-toggle").click();
+    await hostPage.getByTestId("more-menu-people").click();
     const waitingPanel = hostPage.getByTestId("waiting-room-host-panel");
     await expect(waitingPanel.getByRole("listitem").filter({ hasText: nameGuestA })).toBeVisible({
       timeout: 10_000,
@@ -90,8 +108,11 @@ test.describe.serial("meeting lock", () => {
   });
 
   test("the lock toggle is host-only and starts unlocked", async () => {
+    // Its accessible name lost its emoji prefix when it moved to a real
+    // lucide icon — see MeetingLockControl.tsx.
+    await ensureMoreMenuOpen(hostPage);
     await expect(
-      hostPage.getByTestId("meeting-lock-control").getByRole("button", { name: "🔓 Lock meeting" }),
+      hostPage.getByTestId("meeting-lock-control").getByRole("button", { name: "Lock meeting" }),
     ).toBeVisible({ timeout: 5_000 });
     // Guest A is not the host — no lock control on their page at all.
     await expect(guestAPage.getByTestId("meeting-lock-control")).not.toBeVisible();
@@ -100,9 +121,10 @@ test.describe.serial("meeting lock", () => {
   test("locking blocks a brand-new guest from joining, with a clear reason — they never reach the call", async ({
     browser,
   }) => {
-    await hostPage.getByTestId("meeting-lock-control").getByRole("button", { name: "🔓 Lock meeting" }).click();
+    await ensureMoreMenuOpen(hostPage);
+    await hostPage.getByTestId("meeting-lock-control").getByRole("button", { name: "Lock meeting" }).click();
     await expect(
-      hostPage.getByTestId("meeting-lock-control").getByRole("button", { name: "🔒 Unlock meeting" }),
+      hostPage.getByTestId("meeting-lock-control").getByRole("button", { name: "Unlock meeting" }),
     ).toBeVisible({ timeout: 5_000 });
 
     const guestBState = await registerViaApi(browser, nameGuestB, uniqueEmail("ml-guestb"));
@@ -138,9 +160,10 @@ test.describe.serial("meeting lock", () => {
   });
 
   test("unlocking allows a new guest to join again (through the normal waiting room)", async ({ browser }) => {
-    await hostPage.getByTestId("meeting-lock-control").getByRole("button", { name: "🔒 Unlock meeting" }).click();
+    await ensureMoreMenuOpen(hostPage);
+    await hostPage.getByTestId("meeting-lock-control").getByRole("button", { name: "Unlock meeting" }).click();
     await expect(
-      hostPage.getByTestId("meeting-lock-control").getByRole("button", { name: "🔓 Lock meeting" }),
+      hostPage.getByTestId("meeting-lock-control").getByRole("button", { name: "Lock meeting" }),
     ).toBeVisible({ timeout: 5_000 });
 
     const guestBState = await registerViaApi(browser, nameGuestB + " 2", uniqueEmail("ml-guestb2"));
@@ -153,6 +176,11 @@ test.describe.serial("meeting lock", () => {
     // (still gated by the host, unrelated to the lock) instead of being
     // rejected outright.
     await expect(guestBPage.getByText("Waiting for the host to let you in")).toBeVisible({ timeout: 10_000 });
+    // The dropdown is already open from ensureMoreMenuOpen above (a
+    // section click never touched it in between) — clicking the toggle
+    // again here would close it before "People" could be picked, so this
+    // goes straight to the section item.
+    await hostPage.getByTestId("more-menu-people").click();
     const waitingPanel = hostPage.getByTestId("waiting-room-host-panel");
     await expect(waitingPanel.getByRole("listitem").filter({ hasText: nameGuestB + " 2" })).toBeVisible({
       timeout: 10_000,

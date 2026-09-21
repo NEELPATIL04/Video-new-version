@@ -37,6 +37,51 @@ async function registerViaApi(
   return state;
 }
 
+// WhiteboardControl renders directly inside the "More" dropdown itself
+// (not behind a drawer section — see CallSidePanel.tsx), and nothing
+// closes that dropdown except picking a section or clicking the toggle
+// again — a blind, unconditional toggle click is NOT idempotent here.
+async function ensureMoreMenuOpen(page: Page) {
+  const isOpen = await page.getByTestId("more-menu").isVisible().catch(() => false);
+  if (!isOpen) {
+    await page.getByTestId("more-menu-toggle").click();
+  }
+}
+
+// The whiteboard PANEL has its own separate open/closed state inside
+// WhiteboardControl, independent of the "More" dropdown's own state —
+// opening it doesn't close the dropdown underneath (it's a fixed
+// full-screen overlay on top). Idempotent: does nothing if already open.
+async function ensureWhiteboardOpen(page: Page) {
+  const isOpen = await page.getByTestId("whiteboard-canvas").isVisible().catch(() => false);
+  if (isOpen) return;
+  await ensureMoreMenuOpen(page);
+  await page.getByTestId("whiteboard-control").getByTestId("whiteboard-toggle").click();
+}
+
+// The whiteboard panel is a `fixed inset-0 z-30` overlay covering the
+// entire viewport, including the tray underneath it — so once it's open,
+// `whiteboard-toggle`/`more-menu-toggle` are no longer clickable (they're
+// obscured by the overlay on top of them) until the panel is closed via
+// its own in-panel "Close" button. Closing the panel doesn't close the
+// "More" dropdown underneath (separate state in CallSidePanel), so this
+// also closes that if it's still open, leaving the page in a clean
+// everything-closed state for whatever tray interaction comes next
+// (matching the idempotent-by-default pattern every other helper here
+// relies on).
+async function closeWhiteboard(page: Page) {
+  const isOpen = await page.getByTestId("whiteboard-panel").isVisible().catch(() => false);
+  if (!isOpen) return;
+  // Scoped to the panel itself, not the wider "whiteboard-control" —
+  // the toggle button's own aria-label ("Close whiteboard") also
+  // substring-matches a plain { name: "Close" } locator.
+  await page.getByTestId("whiteboard-panel").getByRole("button", { name: "Close", exact: true }).click();
+  const menuOpen = await page.getByTestId("more-menu").isVisible().catch(() => false);
+  if (menuOpen) {
+    await page.getByTestId("more-menu-toggle").click();
+  }
+}
+
 // Drags a diagonal line across roughly the middle 40% of the canvas —
 // well clear of the edges so the sampled midpoint below is unambiguous
 // regardless of anti-aliasing at the stroke's own endpoints.
@@ -119,6 +164,10 @@ test.describe.serial("whiteboard", () => {
     // flow as every other real join (see waiting-room.spec.ts).
     await guestAPage.goto(roomUrl);
     await expect(guestAPage.getByText("Waiting for the host to let you in")).toBeVisible({ timeout: 10_000 });
+    // Behind the tray's "More" menu's People section now, not a
+    // permanently-visible rail icon (see CallSidePanel.tsx).
+    await hostPage.getByTestId("more-menu-toggle").click();
+    await hostPage.getByTestId("more-menu-people").click();
     const waitingPanel = hostPage.getByTestId("waiting-room-host-panel");
     await expect(waitingPanel.getByRole("listitem").filter({ hasText: nameGuestA })).toBeVisible({
       timeout: 10_000,
@@ -133,12 +182,10 @@ test.describe.serial("whiteboard", () => {
   });
 
   test("a stroke drawn by one participant appears live on the OTHER participant's canvas", async () => {
-    await hostPage.getByTestId("whiteboard-control").getByTestId("whiteboard-toggle").click();
-    await expect(hostPage.getByTestId("whiteboard-canvas")).toBeVisible({ timeout: 5_000 });
+    await ensureWhiteboardOpen(hostPage);
     await drawDiagonalStroke(hostPage);
 
-    await guestAPage.getByTestId("whiteboard-control").getByTestId("whiteboard-toggle").click();
-    await expect(guestAPage.getByTestId("whiteboard-canvas")).toBeVisible({ timeout: 5_000 });
+    await ensureWhiteboardOpen(guestAPage);
 
     // The real proof: it shows up on guest A's canvas, delivered live via
     // LiveKit's data channel while both are already connected — not just
@@ -146,6 +193,12 @@ test.describe.serial("whiteboard", () => {
     await expect
       .poll(async () => isPixelPainted(guestAPage, 0.4, 0.4), { timeout: 5_000 })
       .toBe(true);
+
+    // Leave both pages clean before the next test needs hostPage's tray
+    // (more-menu-toggle) — otherwise the still-open fullscreen panel
+    // blocks every click underneath it.
+    await closeWhiteboard(hostPage);
+    await closeWhiteboard(guestAPage);
   });
 
   test("a participant who joins AFTER a stroke has already been drawn still sees it", async ({ browser }) => {
@@ -161,6 +214,8 @@ test.describe.serial("whiteboard", () => {
 
     await guestBPage.goto(roomUrl);
     await expect(guestBPage.getByText("Waiting for the host to let you in")).toBeVisible({ timeout: 10_000 });
+    await hostPage.getByTestId("more-menu-toggle").click();
+    await hostPage.getByTestId("more-menu-people").click();
     const waitingPanel = hostPage.getByTestId("waiting-room-host-panel");
     await expect(waitingPanel.getByRole("listitem").filter({ hasText: nameGuestB })).toBeVisible({
       timeout: 10_000,
@@ -168,8 +223,7 @@ test.describe.serial("whiteboard", () => {
     await waitingPanel.getByRole("listitem").filter({ hasText: nameGuestB }).getByRole("button", { name: "Admit" }).click();
     await expect(guestBPage.getByRole("button", { name: /Leave/i })).toBeVisible({ timeout: 10_000 });
 
-    await guestBPage.getByTestId("whiteboard-control").getByTestId("whiteboard-toggle").click();
-    await expect(guestBPage.getByTestId("whiteboard-canvas")).toBeVisible({ timeout: 5_000 });
+    await ensureWhiteboardOpen(guestBPage);
 
     // Guest B never received the earlier broadcast — this can only be
     // painted from the strokes fetched via GET /rooms/:id/whiteboard/strokes
@@ -182,6 +236,7 @@ test.describe.serial("whiteboard", () => {
   });
 
   test("the host clearing the whiteboard removes it for every participant", async () => {
+    await ensureWhiteboardOpen(hostPage);
     await hostPage.getByTestId("whiteboard-control").getByRole("button", { name: "Clear canvas" }).click();
 
     await expect

@@ -38,12 +38,25 @@ async function registerViaApi(
 async function joinAndAdmit(hostPage: Page, guestPage: Page, roomUrl: string, guestName: string) {
   await guestPage.goto(roomUrl);
   await expect(guestPage.getByText("Waiting for the host to let you in")).toBeVisible({ timeout: 10_000 });
+  // Behind the tray's "More" menu's People section now, not a
+  // permanently-visible rail icon (see CallSidePanel.tsx).
+  await hostPage.getByTestId("more-menu-toggle").click();
+  await hostPage.getByTestId("more-menu-people").click();
   const waitingPanel = hostPage.getByTestId("waiting-room-host-panel");
   await expect(waitingPanel.getByRole("listitem").filter({ hasText: guestName })).toBeVisible({
     timeout: 10_000,
   });
   await waitingPanel.getByRole("listitem").filter({ hasText: guestName }).getByRole("button", { name: "Admit" }).click();
   await expect(guestPage.getByRole("button", { name: /Leave/i })).toBeVisible({ timeout: 10_000 });
+
+  // PollControl only mounts once THIS participant opens the More menu's
+  // Polls section themselves (CallSidePanel.tsx renders it only for
+  // activeSection === "polls") — every guest in this suite is here
+  // specifically to interact with polls, so open it for them right away,
+  // the same way they'd naturally check it after joining a call they know
+  // has a poll running.
+  await guestPage.getByTestId("more-menu-toggle").click();
+  await guestPage.getByTestId("more-menu-polls").click();
 }
 
 test.describe.serial("polls", () => {
@@ -94,6 +107,8 @@ test.describe.serial("polls", () => {
   });
 
   test("the host can create a poll, and it appears live for a guest already in the call", async () => {
+    await hostPage.getByTestId("more-menu-toggle").click();
+    await hostPage.getByTestId("more-menu-polls").click();
     await hostPage.getByTestId("poll-open-create").click();
     const form = hostPage.getByTestId("poll-create-form");
     await form.getByTestId("poll-question-input").fill("Best time for the next standup?");
@@ -168,6 +183,14 @@ test.describe.serial("polls", () => {
   });
 
   test("closing the poll locks further voting, and a guest who was already voting cannot vote again", async () => {
+    // The previous test's joinAndAdmit call switched hostPage's "More"
+    // drawer over to the People section (to admit guest B) and never
+    // switched it back — PollControl (and poll-close with it) only
+    // mounts while the Polls section is the active one, so it has to be
+    // navigated back to explicitly rather than assuming it's still where
+    // test 1 originally left it.
+    await hostPage.getByTestId("more-menu-toggle").click();
+    await hostPage.getByTestId("more-menu-polls").click();
     await hostPage.getByTestId("poll-close").click();
 
     await expect(hostPage.getByTestId("poll-active")).toContainText("Poll closed", { timeout: 5_000 });

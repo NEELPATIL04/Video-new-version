@@ -41,6 +41,10 @@ async function registerViaApi(
 async function joinAndAdmit(hostPage: Page, guestPage: Page, roomUrl: string, guestName: string) {
   await guestPage.goto(roomUrl);
   await expect(guestPage.getByText("Waiting for the host to let you in")).toBeVisible({ timeout: 10_000 });
+  // Behind the tray's "More" menu's People section now, not a
+  // permanently-visible rail icon (see CallSidePanel.tsx).
+  await hostPage.getByTestId("more-menu-toggle").click();
+  await hostPage.getByTestId("more-menu-people").click();
   const waitingPanel = hostPage.getByTestId("waiting-room-host-panel");
   await expect(waitingPanel.getByRole("listitem").filter({ hasText: guestName })).toBeVisible({
     timeout: 10_000,
@@ -107,6 +111,12 @@ test.describe.serial("meeting templates & agenda", () => {
     roomUrl = hostPage.url();
     await expect(hostPage.getByRole("button", { name: /Leave/i })).toBeVisible({ timeout: 15_000 });
 
+    // AgendaControl only mounts once the host opens the "More" menu's
+    // Agenda section themselves (CallSidePanel.tsx renders it only for
+    // activeSection === "agenda") — not a permanently-visible panel.
+    await hostPage.getByTestId("more-menu-toggle").click();
+    await hostPage.getByTestId("more-menu-agenda").click();
+
     // Fetched on mount from AgendaItem rows RoomsService.createRoom seeded
     // transactionally from the template — not from any live broadcast,
     // since nothing has happened in this room yet.
@@ -140,6 +150,11 @@ test.describe.serial("meeting templates & agenda", () => {
 
     await joinAndAdmit(hostPage, guestPage, roomUrl, nameGuest);
 
+    // The guest has to open their OWN Agenda section for AgendaControl to
+    // mount and fetch on THEIR page — this is exactly the late-joiner
+    // fetch-on-mount path this test is verifying.
+    await guestPage.getByTestId("more-menu-toggle").click();
+    await guestPage.getByTestId("more-menu-agenda").click();
     const guestAgendaList = guestPage.getByTestId("agenda-list");
     // Exactly what step 3 left: item 1 completed, item 2 gone, item 3
     // present — sourced entirely from the REST fetch on mount, since no

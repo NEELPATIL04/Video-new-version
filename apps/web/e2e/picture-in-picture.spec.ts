@@ -47,6 +47,17 @@ async function registerViaApi(
   return state;
 }
 
+// PictureInPictureControl renders directly inside the "More" dropdown
+// itself (not behind a drawer section — see CallSidePanel.tsx), and
+// nothing closes that dropdown except picking a section or clicking the
+// toggle again — a blind, unconditional toggle click is NOT idempotent.
+async function ensureMoreMenuOpen(page: Page) {
+  const isOpen = await page.getByTestId("more-menu").isVisible().catch(() => false);
+  if (!isOpen) {
+    await page.getByTestId("more-menu-toggle").click();
+  }
+}
+
 test.describe.serial("picture-in-picture", () => {
   let hostContext: BrowserContext;
   let guestContext: BrowserContext;
@@ -88,6 +99,10 @@ test.describe.serial("picture-in-picture", () => {
     // as every other real join (see waiting-room.spec.ts).
     await guestPage.goto(roomUrl);
     await expect(guestPage.getByText("Waiting for the host to let you in")).toBeVisible({ timeout: 10_000 });
+    // Behind the tray's "More" menu's People section now, not a
+    // permanently-visible rail icon (see CallSidePanel.tsx).
+    await hostPage.getByTestId("more-menu-toggle").click();
+    await hostPage.getByTestId("more-menu-people").click();
     const waitingPanel = hostPage.getByTestId("waiting-room-host-panel");
     await expect(waitingPanel.getByRole("listitem").filter({ hasText: nameGuest })).toBeVisible({
       timeout: 10_000,
@@ -104,12 +119,16 @@ test.describe.serial("picture-in-picture", () => {
   test("the control is visible to both the host and a regular participant", async () => {
     // Unlike HostControls/MeetingLockControl, picture-in-picture is a
     // personal viewing preference, not a host-only action — it must
-    // render for everyone in the call, not be gated on isHost.
+    // render for everyone in the call, not be gated on isHost. Lives
+    // directly inside the "More" dropdown itself (see CallSidePanel.tsx),
+    // so opening it is enough — no section click needed.
+    await ensureMoreMenuOpen(hostPage);
     await expect(hostPage.getByTestId("picture-in-picture-control")).toBeVisible();
     await expect(
       hostPage.getByTestId("picture-in-picture-control").getByRole("button", { name: "Picture-in-picture" }),
     ).toBeVisible();
 
+    await ensureMoreMenuOpen(guestPage);
     await expect(guestPage.getByTestId("picture-in-picture-control")).toBeVisible();
     await expect(
       guestPage.getByTestId("picture-in-picture-control").getByRole("button", { name: "Picture-in-picture" }),
@@ -120,6 +139,7 @@ test.describe.serial("picture-in-picture", () => {
     const pageErrors: Error[] = [];
     hostPage.on("pageerror", (err) => pageErrors.push(err));
 
+    await ensureMoreMenuOpen(hostPage);
     await hostPage.getByTestId("picture-in-picture-control").getByRole("button", { name: "Picture-in-picture" }).click();
 
     // The click handler is async and always resolves (its own try/catch
@@ -164,6 +184,13 @@ test.describe.serial("picture-in-picture", () => {
 
     await guestCPage.goto(roomUrl);
     await expect(guestCPage.getByText("Waiting for the host to let you in")).toBeVisible({ timeout: 10_000 });
+    // The previous test left hostPage's "More" dropdown OPEN (clicking
+    // the dropdown-direct Picture-in-picture control, unlike a section
+    // link, doesn't close it) — a blind toggle click here would close it
+    // instead of opening it, so this has to go through the same
+    // ensureMoreMenuOpen idempotency helper the rest of this file uses.
+    await ensureMoreMenuOpen(hostPage);
+    await hostPage.getByTestId("more-menu-people").click();
     const waitingPanel = hostPage.getByTestId("waiting-room-host-panel");
     await expect(waitingPanel.getByRole("listitem").filter({ hasText: nameGuestC })).toBeVisible({
       timeout: 10_000,
@@ -171,6 +198,7 @@ test.describe.serial("picture-in-picture", () => {
     await waitingPanel.getByRole("listitem").filter({ hasText: nameGuestC }).getByRole("button", { name: "Admit" }).click();
     await expect(guestCPage.getByRole("button", { name: /Leave/i })).toBeVisible({ timeout: 10_000 });
 
+    await ensureMoreMenuOpen(guestCPage);
     await expect(guestCPage.getByText("Picture-in-picture isn't supported in this browser.")).toBeVisible();
     await expect(
       guestCPage.getByRole("button", { name: "Picture-in-picture" }),
