@@ -104,13 +104,21 @@ export class LiveKitService {
   // separate from the ws:// URL clients use to connect — LIVEKIT_URL is
   // ws://.../wss://... for the client, so it needs mapping to http(s)://
   // here. Lazily constructed and cached rather than built per-call.
+  //
+  // requestTimeout bounds every call through this client. Without it, a
+  // slow/unreachable LiveKit admin API would hang indefinitely — most
+  // consequentially for isIdentityConnected below, which (unlike
+  // mute/remove/setHandRaised, all explicit host actions) now sits in
+  // the ordinary join path every already-admitted participant hits.
   private getRoomService(): RoomServiceClient {
     if (!this.roomService) {
       const wsUrl = this.getUrl();
       const httpUrl = wsUrl.replace(/^ws/, 'http');
       const apiKey = this.config.get<string>('LIVEKIT_API_KEY');
       const apiSecret = this.config.get<string>('LIVEKIT_API_SECRET');
-      this.roomService = new RoomServiceClient(httpUrl, apiKey, apiSecret);
+      this.roomService = new RoomServiceClient(httpUrl, apiKey, apiSecret, {
+        requestTimeout: 5,
+      });
     }
     return this.roomService;
   }

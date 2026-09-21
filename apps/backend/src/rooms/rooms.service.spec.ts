@@ -673,6 +673,39 @@ describe('RoomsService', () => {
       expect(liveKit.createAccessToken).not.toHaveBeenCalled();
     });
 
+    it('proceeds with the join (fails open) when the isIdentityConnected check itself throws', async () => {
+      // This is a courtesy check, not a security check — a LiveKit
+      // admin-API outage/timeout must never block an already-admitted
+      // participant from joining their own meeting. See joinRoom's own
+      // comment for the full reasoning.
+      prisma.room.findUnique.mockResolvedValue(
+        makeRoom({ status: 'active', maxParticipants: 10 }),
+      );
+      prisma.participant.count.mockResolvedValue(1);
+      prisma.participant.findUnique.mockResolvedValue({ id: 'p-3' });
+      prisma.participant.upsert.mockResolvedValue({
+        id: 'p-3',
+        userId: 'user-3',
+        role: 'participant',
+        admittedAt: new Date(),
+        user: { name: 'User Three' },
+      });
+      liveKit.isIdentityConnected.mockRejectedValue(
+        new Error('LiveKit admin API timed out'),
+      );
+
+      const result = await service.joinRoom('room-1', 'user-3');
+
+      expect(result).toEqual({
+        status: 'admitted',
+        participant: expect.objectContaining({ id: 'p-3' }),
+        liveKitUrl: 'ws://localhost:7880',
+        liveKitToken: 'signed-token',
+        e2eeEnabled: false,
+      });
+      expect(liveKit.createAccessToken).toHaveBeenCalled();
+    });
+
     it('force: true proceeds to a real token even when already connected, with role unchanged', async () => {
       prisma.room.findUnique.mockResolvedValue(
         makeRoom({ status: 'active', maxParticipants: 10 }),

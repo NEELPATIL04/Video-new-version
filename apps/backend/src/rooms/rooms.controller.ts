@@ -109,6 +109,14 @@ export class RoomsController {
   // RoomsService.joinRoom/buildJoinResult for why a LiveKit token is only
   // ever issued once admittedAt is actually set in the database, never
   // just because the caller says they're the host.
+  //
+  // Stricter than the global default (60/min) — unlike most room-scoped
+  // reads, an already-admitted participant's join now makes a real
+  // outbound call to LiveKit's admin API (isIdentityConnected, see
+  // RoomsService.joinRoom), making this the most expensive per-request
+  // endpoint in this controller. Bounded the same way create's DB-write
+  // cost already is, not because join itself is a brute-force target.
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post(':id/join')
   join(
     @Param('id') id: string,

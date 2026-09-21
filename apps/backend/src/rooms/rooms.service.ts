@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma, RoomStatus } from '@prisma/client';
@@ -49,6 +50,8 @@ type JoinResult =
 
 @Injectable()
 export class RoomsService {
+  private readonly logger = new Logger(RoomsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly liveKit: LiveKitService,
@@ -331,12 +334,29 @@ export class RoomsService {
     // after the client has already shown the caller this exact situation
     // and they chose to continue here anyway.
     if (participant.admittedAt && !force) {
-      const alreadyConnected = await this.liveKit.isIdentityConnected(
-        room.id,
-        participant.userId,
-      );
-      if (alreadyConnected) {
-        return { status: 'already-connected', participant };
+      // Fails OPEN, not closed: this check exists purely to give a
+      // politer experience than LiveKit's own silent duplicate-identity
+      // kick, not to enforce anything security-sensitive — the token
+      // minted below is still fully gated by the admission/role checks
+      // above regardless of this call's outcome. If LiveKit's admin API
+      // is slow or unreachable (bounded by getRoomService's own
+      // requestTimeout so this can't hang indefinitely), an already-
+      // admitted participant must still be able to join their own
+      // meeting rather than being blocked by an outage in a courtesy
+      // check, so any failure here just falls through to the ordinary
+      // join below instead of rethrowing.
+      try {
+        const alreadyConnected = await this.liveKit.isIdentityConnected(
+          room.id,
+          participant.userId,
+        );
+        if (alreadyConnected) {
+          return { status: 'already-connected', participant };
+        }
+      } catch (error) {
+        this.logger.warn(
+          `isIdentityConnected check failed for room ${room.id}, proceeding with join: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
     }
 

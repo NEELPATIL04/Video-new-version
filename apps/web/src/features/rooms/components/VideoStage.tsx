@@ -144,7 +144,7 @@ export function VideoStage({ roomId, canManage, isHost }: VideoStageProps) {
                 </div>
               </div>
               <div className="tray-divider" />
-              <CallSidePanel roomId={roomId} canManage={canManage} isHost={isHost} />
+              <CallSidePanel roomId={roomId} canManage={canManage} isHost={isHost} showChat={showChat} />
             </div>
           </div>
         </div>
