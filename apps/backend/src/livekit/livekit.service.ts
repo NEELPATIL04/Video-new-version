@@ -152,6 +152,24 @@ export class LiveKitService {
     }
   }
 
+  // Used by RoomsService.joinRoom to detect "this identity is already
+  // live in this LiveKit room" before minting a second access token for
+  // it — unlike mute/remove above, "not connected" is the EXPECTED,
+  // non-error outcome here (proceed with the join), not a failure to
+  // translate into LiveKitParticipantNotConnectedError.
+  async isIdentityConnected(
+    roomId: string,
+    identity: string,
+  ): Promise<boolean> {
+    try {
+      await this.getRoomService().getParticipant(roomId, identity);
+      return true;
+    } catch (error) {
+      if (isParticipantNotConnected(error)) return false;
+      throw error;
+    }
+  }
+
   // A breakout room is just another ordinary LiveKit room (see
   // FEATURES.md's Research notes) — there is no "breakout" primitive in
   // LiveKit at all. Pre-creating it explicitly (rather than relying on

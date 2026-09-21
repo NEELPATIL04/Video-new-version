@@ -285,4 +285,48 @@ describe('LiveKitService', () => {
       ).rejects.toThrow('network down');
     });
   });
+
+  // Used by RoomsService.joinRoom to detect a duplicate-device join
+  // before minting a second token — unlike the block above, "not
+  // connected" here is the expected outcome (resolves false), never an
+  // error to translate.
+  describe('isIdentityConnected', () => {
+    beforeEach(() => {
+      mockGetParticipant.mockReset();
+    });
+
+    const notFoundError = () =>
+      new ServerError(
+        'Not Found',
+        'twirp error unknown: participant does not exist',
+        404,
+        'unknown',
+      );
+
+    it('resolves true when LiveKit reports the identity as live', async () => {
+      mockGetParticipant.mockResolvedValue({ identity: 'user-2' });
+
+      await expect(
+        service.isIdentityConnected('room-1', 'user-2'),
+      ).resolves.toBe(true);
+    });
+
+    it('resolves false on a 404 instead of throwing', async () => {
+      mockGetParticipant.mockRejectedValue(notFoundError());
+
+      await expect(
+        service.isIdentityConnected('room-1', 'user-2'),
+      ).resolves.toBe(false);
+    });
+
+    it('does not swallow an unrelated LiveKit error as "not connected"', async () => {
+      mockGetParticipant.mockRejectedValue(
+        new ServerError('Internal Server Error', 'boom', 500, 'internal'),
+      );
+
+      await expect(
+        service.isIdentityConnected('room-1', 'user-2'),
+      ).rejects.toThrow('boom');
+    });
+  });
 });

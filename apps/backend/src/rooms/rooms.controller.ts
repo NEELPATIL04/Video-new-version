@@ -17,6 +17,7 @@ import { UpdateRoomDto } from './dto/update-room.dto';
 import { CreateWhiteboardStrokeDto } from './dto/create-whiteboard-stroke.dto';
 import { AddAgendaItemDto } from './dto/add-agenda-item.dto';
 import { ToggleAgendaItemDto } from './dto/toggle-agenda-item.dto';
+import { JoinRoomDto } from './dto/join-room.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RoomHostGuard } from './guards/room-host.guard';
 import { RoomHostOrCoHostGuard } from './guards/room-host-or-cohost.guard';
@@ -109,8 +110,12 @@ export class RoomsController {
   // ever issued once admittedAt is actually set in the database, never
   // just because the caller says they're the host.
   @Post(':id/join')
-  join(@Param('id') id: string, @CurrentUser() user: { userId: string }) {
-    return this.rooms.joinRoom(id, user.userId);
+  join(
+    @Param('id') id: string,
+    @Body() dto: JoinRoomDto,
+    @CurrentUser() user: { userId: string },
+  ) {
+    return this.rooms.joinRoom(id, user.userId, dto.force ?? false);
   }
 
   // Polled by a waiting participant to find out once the host has acted.

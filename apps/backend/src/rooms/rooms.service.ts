@@ -41,7 +41,11 @@ type JoinResult =
       // silently join with broken, undecryptable media.
       e2eeEnabled: boolean;
     }
-  | { status: 'denied' };
+  | { status: 'denied' }
+  // This account already has a live LiveKit connection in this room
+  // (another device/tab) — see joinRoom's own comment for why this is
+  // checked there and not in buildJoinResult/getParticipantStatus.
+  | { status: 'already-connected'; participant: ParticipantWithUser };
 
 @Injectable()
 export class RoomsService {
@@ -246,7 +250,11 @@ export class RoomsService {
     ]);
   }
 
-  async joinRoom(roomId: string, userId: string): Promise<JoinResult> {
+  async joinRoom(
+    roomId: string,
+    userId: string,
+    force = false,
+  ): Promise<JoinResult> {
     const room = await this.getRoomById(roomId);
     if (room.status === RoomStatus.ended) {
       throw new ConflictException('This meeting has already ended');
@@ -308,6 +316,28 @@ export class RoomsService {
         where: { id: roomId },
         data: { status: RoomStatus.active },
       });
+    }
+
+    // LiveKit access tokens are minted with identity: userId (see
+    // buildJoinResult below) — a bare user id, not per-device. A second
+    // device/tab minting a token under that same identity would silently
+    // kick whatever connection is already live (LiveKit's own duplicate-
+    // identity handling). Checked ONLY here, not inside
+    // buildJoinResult/getParticipantStatus: that helper is also used by
+    // the join-status polling loop an ALREADY-connected participant's own
+    // client runs every few seconds to pick up live role changes — if the
+    // check lived there, that routine self-poll would find its own live
+    // connection and trip this path against itself. `force` is set only
+    // after the client has already shown the caller this exact situation
+    // and they chose to continue here anyway.
+    if (participant.admittedAt && !force) {
+      const alreadyConnected = await this.liveKit.isIdentityConnected(
+        room.id,
+        participant.userId,
+      );
+      if (alreadyConnected) {
+        return { status: 'already-connected', participant };
+      }
     }
 
     return this.buildJoinResult(room, participant);
