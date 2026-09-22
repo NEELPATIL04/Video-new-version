@@ -23,6 +23,7 @@ const schema = z
     // Only meaningful for an instant meeting — see the checkbox's own
     // note below for why a scheduled meeting can't offer this yet.
     e2eeEnabled: z.boolean(),
+    webinarMode: z.boolean(),
   })
   .refine((v) => !v.scheduleForLater || !!v.scheduledFor, {
     message: "Pick a date and time",
@@ -77,7 +78,7 @@ export function CreateRoomForm() {
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { scheduleForLater: false, e2eeEnabled: false },
+    defaultValues: { scheduleForLater: false, e2eeEnabled: false, webinarMode: false },
   });
 
   // useWatch (not the `watch` method off useForm()) — it's the React
@@ -122,6 +123,7 @@ export function CreateRoomForm() {
             ? new Date(values.scheduledFor).toISOString()
             : undefined,
           e2eeEnabled: !!e2eeKey,
+          webinarMode: values.webinarMode,
           // Omitted entirely (not empty string) when "None" is selected —
           // the backend DTO's @IsOptional() @IsUUID() would reject "".
           templateId: templateId || undefined,
@@ -186,6 +188,11 @@ export function CreateRoomForm() {
       <label className="flex items-center gap-2 text-sm text-secondary">
         <input type="checkbox" {...register("scheduleForLater")} />
         Schedule for later
+      </label>
+
+      <label className="flex items-center gap-2 text-sm text-secondary">
+        <input type="checkbox" {...register("webinarMode")} />
+        Webinar mode — attendees join view-only; promote anyone to present
       </label>
 
       {e2eeSupported && !scheduleForLater && (

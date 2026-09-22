@@ -23,6 +23,10 @@ export interface Room {
   // in this Room object or any other API response; it only ever lives in
   // the room URL's fragment, which this object has no access to.
   e2eeEnabled: boolean;
+  // Fixed at creation, same as e2eeEnabled. When true, new (non-host)
+  // joiners get role "viewer" instead of "participant" — see
+  // Participant.role above and Room.webinarMode in schema.prisma.
+  webinarMode: boolean;
 }
 
 // Shared shape for both the waiting-room list and the full active-
@@ -70,6 +74,7 @@ export function createRoom(
     scheduledFor?: string;
     maxParticipants?: number;
     e2eeEnabled?: boolean;
+    webinarMode?: boolean;
     // Optional MeetingTemplate id to seed this room's starter agenda from
     // — validated server-side (ownership + existence), never silently
     // ignored if invalid. Omit entirely (not empty string) when "None" is

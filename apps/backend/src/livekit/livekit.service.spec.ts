@@ -121,7 +121,12 @@ describe('LiveKitService', () => {
     expect(claims.video?.roomRecord).toBeFalsy();
   });
 
-  it('grants a viewer subscribe-only — never publish, never admin', async () => {
+  // A viewer (webinar-mode attendee — see Room.webinarMode in
+  // schema.prisma) can't publish their own audio/video/screen, but IS
+  // still an interactive attendee: canPublishData (chat, reactions, poll
+  // votes) and canUpdateOwnMetadata (raise-hand) both stay true so a
+  // webinar's view-only audience isn't a fully silent one.
+  it('grants a viewer subscribe-only for media, but still interactive (chat/react/raise-hand)', async () => {
     const jwt = await service.createAccessToken({
       identity: 'user-3',
       name: 'Carol',
@@ -131,7 +136,8 @@ describe('LiveKitService', () => {
 
     const claims = await decode(jwt);
     expect(claims.video?.canPublish).toBe(false);
-    expect(claims.video?.canPublishData).toBe(false);
+    expect(claims.video?.canPublishData).toBe(true);
+    expect(claims.video?.canUpdateOwnMetadata).toBe(true);
     expect(claims.video?.canSubscribe).toBe(true);
     expect(claims.video?.roomAdmin).toBeFalsy();
   });
@@ -141,8 +147,9 @@ describe('LiveKitService', () => {
   // only allows this at all when canUpdateOwnMetadata is granted, and
   // (per LiveKit's own semantics) it only ever lets a participant touch
   // their own metadata, never someone else's, which is exactly why the
-  // self raise/lower path needs no backend round trip.
-  it('grants host and participant canUpdateOwnMetadata, but not a viewer', async () => {
+  // self raise/lower path needs no backend round trip. True for every
+  // role, including a viewer — see the test above.
+  it('grants canUpdateOwnMetadata to every role', async () => {
     const hostJwt = await service.createAccessToken({
       identity: 'host-1',
       name: 'Host',
@@ -155,18 +162,11 @@ describe('LiveKitService', () => {
       roomId: 'room-1',
       role: 'participant',
     });
-    const viewerJwt = await service.createAccessToken({
-      identity: 'user-3',
-      name: 'Carol',
-      roomId: 'room-1',
-      role: 'viewer',
-    });
 
     expect((await decode(hostJwt)).video?.canUpdateOwnMetadata).toBe(true);
     expect((await decode(participantJwt)).video?.canUpdateOwnMetadata).toBe(
       true,
     );
-    expect((await decode(viewerJwt)).video?.canUpdateOwnMetadata).toBeFalsy();
   });
 
   it('never issues a valid token for a wrong secret (confirms real signing, not a stub)', async () => {
@@ -326,6 +326,77 @@ describe('LiveKitService', () => {
 
       await expect(
         service.isIdentityConnected('room-1', 'user-2'),
+      ).rejects.toThrow('boom');
+    });
+  });
+
+  // Used by RoomsService.promoteToCoHost/demoteCoHost for a webinar's
+  // viewer<->cohost transition — updates an ALREADY-CONNECTED
+  // participant's live enforced permissions, same three-case error shape
+  // as the rest of this file (isParticipantNotConnected on a 404, rethrow
+  // otherwise), but ALSO has to get the actual permission payload right
+  // per role, since that's the one thing this method exists to change.
+  describe('updateParticipantPermissions', () => {
+    beforeEach(() => {
+      mockUpdateParticipant.mockReset();
+    });
+
+    const notFoundError = () =>
+      new ServerError(
+        'Not Found',
+        'twirp error unknown: participant does not exist',
+        404,
+        'unknown',
+      );
+
+    it('grants canPublish for cohost (a promoted webinar viewer can start publishing)', async () => {
+      mockUpdateParticipant.mockResolvedValue({});
+
+      await service.updateParticipantPermissions('room-1', 'user-2', 'cohost');
+
+      expect(mockUpdateParticipant).toHaveBeenCalledWith(
+        'room-1',
+        'user-2',
+        undefined,
+        expect.objectContaining({
+          canPublish: true,
+          canPublishData: true,
+          canSubscribe: true,
+        }),
+      );
+    });
+
+    it('revokes canPublish for viewer (a demoted webinar presenter loses it again)', async () => {
+      mockUpdateParticipant.mockResolvedValue({});
+
+      await service.updateParticipantPermissions('room-1', 'user-2', 'viewer');
+
+      expect(mockUpdateParticipant).toHaveBeenCalledWith(
+        'room-1',
+        'user-2',
+        undefined,
+        expect.objectContaining({
+          canPublish: false,
+          canPublishData: true,
+        }),
+      );
+    });
+
+    it('throws LiveKitParticipantNotConnectedError on a 404', async () => {
+      mockUpdateParticipant.mockRejectedValue(notFoundError());
+
+      await expect(
+        service.updateParticipantPermissions('room-1', 'user-2', 'cohost'),
+      ).rejects.toBeInstanceOf(LiveKitParticipantNotConnectedError);
+    });
+
+    it('does not swallow an unrelated LiveKit error', async () => {
+      mockUpdateParticipant.mockRejectedValue(
+        new ServerError('Internal Server Error', 'boom', 500, 'internal'),
+      );
+
+      await expect(
+        service.updateParticipantPermissions('room-1', 'user-2', 'cohost'),
       ).rejects.toThrow('boom');
     });
   });

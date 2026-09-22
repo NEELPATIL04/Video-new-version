@@ -64,27 +64,27 @@ shipped and stable, per the tier-order rule.
 
 ## Tier 3 — v3 (advanced / enterprise)
 
-| Feature                                                                                                                                                                                                                | Tag |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
-| Large-scale webinar/broadcast mode (view-only, hundreds-thousands)                                                                                                                                                     | v3  |
-| Live streaming out (YouTube/Facebook/custom RTMP)                                                                                                                                                                      | v3  |
-| SIP/PSTN dial-in (join by phone number)                                                                                                                                                                                | v3  |
-| Multi-device join (same user, multiple devices)                                                                                                                                                                        | v3  |
-| Admin dashboard: org-wide user management                                                                                                                                                                              | v3  |
-| Admin dashboard: usage reports                                                                                                                                                                                         | v3  |
-| Admin dashboard: security policies                                                                                                                                                                                     | v3  |
-| Enterprise SSO/SAML                                                                                                                                                                                                    | v3  |
-| Role-based access control                                                                                                                                                                                              | v3  |
-| Public API/SDK (embeddable video calls)                                                                                                                                                                                | v3  |
-| Integration: Slack                                                                                                                                                                                                     | v3  |
-| Integration: Jira                                                                                                                                                                                                      | v3  |
-| Integration: Notion                                                                                                                                                                                                    | v3  |
-| White-labeling / custom branding                                                                                                                                                                                       | v3  |
-| Meeting templates & agendas — **done**, reusable `MeetingTemplate` presets + live per-room `AgendaItem` checklist — see Research notes                                                                                 | v3  |
-| Security: watermarking                                                                                                                                                                                                 | v3  |
-| Security: domain-restricted join                                                                                                                                                                                       | v3  |
-| Security: enforced waiting room policies                                                                                                                                                                               | v3  |
-| Cross-tab annotation overlay (draw on top of the presenter's OTHER browser tabs, not just inside our call UI) — requires a companion browser extension, separate codebase from the web app; see "Research notes" below | v3  |
+| Feature                                                                                                                                                                                                                                                                                  | Tag |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+| Webinar/broadcast mode (view-only attendees, promotable presenters) — **done**, reuses the existing `viewer`/co-host roles, realistic up to a self-hosted single-node's WebRTC SFU bandwidth ceiling (dozens-to-low-hundreds) — true thousands-scale moved to Tier 5, see Research notes | v3  |
+| Live streaming out (YouTube/Facebook/custom RTMP)                                                                                                                                                                                                                                        | v3  |
+| SIP/PSTN dial-in (join by phone number)                                                                                                                                                                                                                                                  | v3  |
+| Multi-device join (same user, multiple devices) — **done**, graceful single-active-session handoff instead of a silent duplicate-identity kick — see Research notes                                                                                                                      | v3  |
+| Admin dashboard: org-wide user management                                                                                                                                                                                                                                                | v3  |
+| Admin dashboard: usage reports                                                                                                                                                                                                                                                           | v3  |
+| Admin dashboard: security policies                                                                                                                                                                                                                                                       | v3  |
+| Enterprise SSO/SAML                                                                                                                                                                                                                                                                      | v3  |
+| Role-based access control                                                                                                                                                                                                                                                                | v3  |
+| Public API/SDK (embeddable video calls)                                                                                                                                                                                                                                                  | v3  |
+| Integration: Slack                                                                                                                                                                                                                                                                       | v3  |
+| Integration: Jira                                                                                                                                                                                                                                                                        | v3  |
+| Integration: Notion                                                                                                                                                                                                                                                                      | v3  |
+| White-labeling / custom branding                                                                                                                                                                                                                                                         | v3  |
+| Meeting templates & agendas — **done**, reusable `MeetingTemplate` presets + live per-room `AgendaItem` checklist — see Research notes                                                                                                                                                   | v3  |
+| Security: watermarking                                                                                                                                                                                                                                                                   | v3  |
+| Security: domain-restricted join                                                                                                                                                                                                                                                         | v3  |
+| Security: enforced waiting room policies                                                                                                                                                                                                                                                 | v3  |
+| Cross-tab annotation overlay (draw on top of the presenter's OTHER browser tabs, not just inside our call UI) — requires a companion browser extension, separate codebase from the web app; see "Research notes" below                                                                   | v3  |
 
 ---
 
@@ -116,16 +116,17 @@ providers, which storage backend, which email provider) or a new data model befo
 single line gets written. Moved here so Tier 1 isn't blocked waiting on decisions that
 are the user's to make, not something to default into.
 
-| Feature                                | Originally | Why it's separate                                                                                                                                                                                                                                       |
-| -------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Cloud recording (start/stop, playback) | v1         | Needs LiveKit Egress + a real storage backend (S3 or similar) — an infra decision, not a code gap                                                                                                                                                       |
-| Create meeting: recurring              | v1         | Needs a new `MeetingSeries` model, an RRULE-based recurrence engine, and single-vs-series edit/cancel semantics — a genuinely new data model, not a field added to scheduling                                                                           |
-| Google/Microsoft SSO                   | v1         | OAuth provider integration alongside (not replacing) the custom auth system — its own consent flows and provider-specific quirks per provider                                                                                                           |
-| Calendar integration (real OAuth sync) | v1         | The lightweight add-to-calendar links shipped instead (Tier 1, done). Full Google Calendar API / Microsoft Graph sync needs separate OAuth app registrations per provider and, at scale, Google's own security verification review — see Research notes |
-| Email/push notifications & reminders   | v1         | Blocked on an email provider decision (managed like Resend/SES vs. self-hosted Postal, which needs a domain with DNS control) — deliberately not built against a stub                                                                                   |
-| Mobile app (iOS/Android)               | v1         | A separate React Native codebase (per TECH_STACK.md), not an extension of the web app                                                                                                                                                                   |
-| Recording sharing (permissioned link)  | v2         | Meaningless without recording itself, which is already deferred above on the same LiveKit Egress + storage backend decision — moved here alongside it rather than left looking independently buildable                                                  |
-| In-chat file sharing                   | v2         | Needs a storage backend decision (S3-compatible bucket vs. self-hosted, upload size limits, virus scanning) — the same class of infra decision as cloud recording above, not a code gap                                                                 |
+| Feature                                                     | Originally | Why it's separate                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ----------------------------------------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cloud recording (start/stop, playback)                      | v1         | Needs LiveKit Egress + a real storage backend (S3 or similar) — an infra decision, not a code gap                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Create meeting: recurring                                   | v1         | Needs a new `MeetingSeries` model, an RRULE-based recurrence engine, and single-vs-series edit/cancel semantics — a genuinely new data model, not a field added to scheduling                                                                                                                                                                                                                                                                                                                                                                |
+| Google/Microsoft SSO                                        | v1         | OAuth provider integration alongside (not replacing) the custom auth system — its own consent flows and provider-specific quirks per provider                                                                                                                                                                                                                                                                                                                                                                                                |
+| Calendar integration (real OAuth sync)                      | v1         | The lightweight add-to-calendar links shipped instead (Tier 1, done). Full Google Calendar API / Microsoft Graph sync needs separate OAuth app registrations per provider and, at scale, Google's own security verification review — see Research notes                                                                                                                                                                                                                                                                                      |
+| Email/push notifications & reminders                        | v1         | Blocked on an email provider decision (managed like Resend/SES vs. self-hosted Postal, which needs a domain with DNS control) — deliberately not built against a stub                                                                                                                                                                                                                                                                                                                                                                        |
+| Mobile app (iOS/Android)                                    | v1         | A separate React Native codebase (per TECH_STACK.md), not an extension of the web app                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Recording sharing (permissioned link)                       | v2         | Meaningless without recording itself, which is already deferred above on the same LiveKit Egress + storage backend decision — moved here alongside it rather than left looking independently buildable                                                                                                                                                                                                                                                                                                                                       |
+| In-chat file sharing                                        | v2         | Needs a storage backend decision (S3-compatible bucket vs. self-hosted, upload size limits, virus scanning) — the same class of infra decision as cloud recording above, not a code gap                                                                                                                                                                                                                                                                                                                                                      |
+| Thousands-scale webinar/broadcast (HLS/CDN, not WebRTC SFU) | v3         | The WebRTC-SFU version (attendees as real LiveKit participants, capped by a single self-hosted node's egress bandwidth) is done — see Tier 3 above. Genuine thousands-scale needs LiveKit Egress deployed as its own service (not present in `infra/livekit/docker-compose.yml`, which is single-node `--dev` mode) outputting HLS to a CDN/storage backend, with attendees watching an HLS stream instead of joining the LiveKit room at all — the same class of Egress + storage-backend decision as cloud recording above, not a code gap |
 
 ---
 
@@ -877,6 +878,144 @@ or missing view, the scenario a data-channel-only implementation would pass
 in casual testing and then silently fail in production. A non-host/
 non-cohost participant is also confirmed to have no add/delete controls at
 all, not just non-functional ones.
+
+### Multi-device join — graceful single-active-session handoff, not simultaneous presence
+
+Investigating this turned up that it wasn't just unbuilt — it was an active
+bug in code that already ran: every LiveKit access token was minted with
+`identity: participant.userId`, the bare user ID with nothing per-device.
+The same account joining the same room from a second device/tab minted a
+token under that identical identity, and LiveKit's own duplicate-identity
+handling silently kicked whatever connection was already live —
+`CallRoom`'s default disconnect handler bounced the first device straight
+to `/rooms` with zero explanation, for every disconnect reason
+indiscriminately.
+
+Two genuinely different features live under this one FEATURES.md row: true
+**simultaneous presence** (both devices as separate tiles at once — needs a
+device-scoped LiveKit identity, a new child table under `Participant`,
+per-session mute/remove semantics, and a real audio-feedback-loop UX
+problem) versus a **graceful single-active-session handoff** (ask before
+triggering the kick, explain it to the device that loses). Built the
+second one, as an actual bug fix for the silent-kick behavior rather than
+a new feature — the same "defer the bigger decision" pattern the Tier 5
+table above uses, rather than half-building simultaneous presence
+alongside a smaller correct fix.
+
+`RoomsService.joinRoom` now checks — only for an already-admitted
+participant, only when not forcing — whether the identity is already
+connected via `LiveKitService.isIdentityConnected`
+(`RoomServiceClient.getParticipant`, reusing the existing
+`isParticipantNotConnected` 404-detection helper mute/remove/lower-hand
+already share). If so, it returns an `already-connected` status instead of
+minting a second token; the frontend shows a plain "Continue here" /
+"Cancel" choice, and only a `force: true` retry proceeds to a real join.
+Deliberately **not** added to `buildJoinResult`/`getParticipantStatus` —
+that helper is shared with the join-status polling loop an already-
+connected participant's own client runs every few seconds to pick up live
+role changes, so putting the check there would make that routine self-poll
+trip against its own live connection.
+
+This check fails OPEN, not closed — it's a courtesy over LiveKit's own
+silent kick, not a security gate (the token minted afterward is still
+fully gated by the existing admission/role checks), so a slow or
+unreachable LiveKit admin API must never block someone from joining their
+own meeting. `LiveKitService`'s `RoomServiceClient` sets a 5s
+`requestTimeout` for exactly this reason, and `joinRoom` catches any
+`isIdentityConnected` failure and proceeds with the join rather than
+rethrowing.
+
+Verified with `multi-device-join.spec.ts` using two independent
+`BrowserContext`s that log into the SAME account (not two different
+registered accounts, unlike every other two-participant spec in this
+suite) — confirmed via `RoomServiceClient.listParticipants` directly
+against LiveKit that exactly one live connection remains after the second
+device "continues," with the role carried over unchanged, and that the
+first device's page actually renders the honest disconnect explanation
+rather than silently landing back on `/rooms`.
+
+### Webinar/broadcast mode — reusing existing roles, and why "thousands" is a separate, deferred feature
+
+FEATURES.md's own framing — "view-only, hundreds-thousands" — turned out to
+describe two genuinely different features once the actual infra was
+checked. LiveKit here runs self-hosted, single-node, `--dev` mode
+(`infra/livekit/docker-compose.yml`) — no Redis, no multi-node mesh, no
+Egress service deployed. In a plain SFU room, the server's own egress
+bandwidth to serve N view-only attendees scales with N × (presenter's
+track bitrate) — realistically dozens-to-low-hundreds of real-time WebRTC
+attendees on this specific deployment, not literally thousands. Genuine
+thousands-scale needs LiveKit Egress → HLS output → a CDN/storage backend,
+so attendees watch an HLS stream instead of joining the LiveKit room as
+WebRTC participants at all — the same _class_ of infra decision (Egress +
+a storage/CDN backend, not a code gap) that already got Cloud recording
+and Calendar OAuth sync deferred to Tier 5. Built the WebRTC-SFU version
+now; moved genuine thousands-scale broadcast to Tier 5 (see the table
+above) rather than silently under-delivering against "thousands" or
+stalling the whole feature on an infra decision nobody's made yet.
+
+**Reused `RoomRole.viewer` and the existing co-host mechanism, rather than
+inventing new ones.** The `viewer` role already existed in `schema.prisma`
+and `LiveKitService.createAccessToken`'s grant already downgraded it —
+but nothing ever assigned it (`RoomsService.joinRoom`'s upsert hardcoded
+`role: 'participant'` for every new joiner). `Room.webinarMode`
+(creation-time-only, same shape as `e2eeEnabled` — no live mid-call
+toggle, since there's no safe moment to reclassify already-connected
+participants' grants that couldn't race with a join) makes `joinRoom`
+assign `'viewer'` instead. A host promotes any attendee to present via the
+existing `promoteToCoHost` endpoint — no new, narrower "presenter" role
+with publish-but-not-moderate powers, since a host only promotes people
+they trust, and this ships with zero new guard classes or migrations
+beyond the one room-level flag.
+
+**Attendees are interactive, not silent.** The `viewer` grant previously
+tied `canPublishData` and `canUpdateOwnMetadata` to role alongside
+`canPublish` — meaning a viewer literally couldn't chat, react, raise a
+hand, or vote in a poll. That blanket downgrade never actually shipped
+anywhere until this feature turned `viewer` from a dormant enum value into
+a real, assigned role, so it was the right moment to reconsider it: a
+webinar audience that can't ask questions in chat or raise a hand
+defeats the Q&A/engagement half of what makes a webinar mode worth
+building, unlike a pure one-way broadcast. Only `canPublish` (actual
+camera/mic/screen-share tracks) stays gated by role now; `canPublishData`/
+`canUpdateOwnMetadata` are `true` for everyone.
+
+**Promoting/demoting a webinar attendee needed a live LiveKit permission
+update, not just a DB write — a genuinely new requirement the existing
+co-host mechanism was never built for.** Every other promotion
+(participant→cohost) never changed `canPublish` (both already had it), so
+`promoteToCoHost`'s own original comment correctly noted "no LiveKit token
+is reissued here... a promotion takes effect immediately for every action
+that actually matters" — true for backend-mediated admin actions
+(mute/remove/lock, all via the backend's own `RoomServiceClient`), but
+viewer→cohost is the first transition where `canPublish` genuinely flips,
+and LiveKit only enforces that from the token's grant at connect time
+unless the live connection's permissions are explicitly updated too. New
+`LiveKitService.updateParticipantPermissions` (confirmed via the SDK's own
+shipped types — `RoomServiceClient.updateParticipant`'s `permission`
+parameter, `ParticipantPermission`'s `canPublish`/`canPublishData`/
+`canSubscribe` fields — that this is a genuine live update, not just
+metadata a client can read) is called from both `promoteToCoHost` and
+`demoteCoHost`.
+
+**Fixed a real, previously-latent bug this feature would otherwise have
+exposed**: `demoteCoHost` hardcoded `role: 'participant'` regardless of
+what the participant was before — harmless while `joinRoom` never assigned
+`'viewer'`, since there was nothing else to fall back to. Once a webinar
+viewer can be promoted, a naive demote back to `'participant'` would
+silently leave them with publish rights they should have lost. Fixed to
+resolve to `room.webinarMode ? 'viewer' : 'participant'` instead.
+
+Verified with `webinar-mode.spec.ts`: an attendee joins a webinar-mode room
+and is confirmed `viewer` (no mic/camera/share-screen controls, but a real
+chat message they send is genuinely received on the host's page — proving
+`canPublishData` actually works over the data channel, not just that the
+UI renders an input); the host promotes them and their mic/camera controls
+appear WITHOUT a page reload, confirmed against LiveKit's own
+`RoomServiceClient.listParticipants().permission.canPublish` directly
+(not just the UI) that the live connection's enforced permissions actually
+changed; demoting them is confirmed, the same way, to revoke `canPublish`
+again rather than leaving it stuck true — the regression test for the
+`demoteCoHost` bug above.
 
 ## Open items
 

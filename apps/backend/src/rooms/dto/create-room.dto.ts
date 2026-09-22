@@ -38,6 +38,13 @@ export class CreateRoomDto {
   @IsBoolean()
   e2eeEnabled?: boolean;
 
+  // Fixed for the room's lifetime once set — see Room.webinarMode in
+  // schema.prisma for why. When true, new (non-host) joiners default to
+  // RoomRole.viewer instead of 'participant' in RoomsService.joinRoom.
+  @IsOptional()
+  @IsBoolean()
+  webinarMode?: boolean;
+
   // Optional preset (MeetingTemplate) to seed this room's starter agenda
   // from. Validated server-side in RoomsService.createRoom — an unknown or
   // not-owned-by-this-host id fails the whole request rather than being

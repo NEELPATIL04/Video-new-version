@@ -60,6 +60,7 @@ describe('RoomsService', () => {
     getUrl: jest.Mock;
     setHandRaised: jest.Mock;
     isIdentityConnected: jest.Mock;
+    updateParticipantPermissions: jest.Mock;
   };
 
   const makeRoom = (overrides: Record<string, unknown> = {}) => ({
@@ -72,6 +73,7 @@ describe('RoomsService', () => {
     createdAt: new Date(),
     updatedAt: new Date(),
     e2eeEnabled: false,
+    webinarMode: false,
     ...overrides,
   });
 
@@ -134,6 +136,11 @@ describe('RoomsService', () => {
       // safe default that preserves their existing "resolves to a real
       // result" behavior rather than throwing on an unmocked call.
       isIdentityConnected: jest.fn().mockResolvedValue(false),
+      // Every existing promote/demote test now also exercises this call
+      // (see promoteToCoHost/demoteCoHost) — a safe resolved default so
+      // those tests don't need to mock it explicitly unless they're
+      // specifically asserting on it.
+      updateParticipantPermissions: jest.fn().mockResolvedValue(undefined),
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -193,6 +200,33 @@ describe('RoomsService', () => {
 
       expect(prisma.room.create).toHaveBeenCalledWith({
         data: expect.objectContaining({ e2eeEnabled: true }),
+      });
+    });
+
+    it('defaults webinarMode to false when not specified', async () => {
+      const room = makeRoom();
+      prisma.room.create.mockResolvedValue(room);
+      prisma.participant.create.mockResolvedValue({ id: 'p-1', role: 'host' });
+
+      await service.createRoom('host-1', { name: 'Standup' });
+
+      expect(prisma.room.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ webinarMode: false }),
+      });
+    });
+
+    it('persists webinarMode: true when the host opts in at creation', async () => {
+      const room = makeRoom({ webinarMode: true });
+      prisma.room.create.mockResolvedValue(room);
+      prisma.participant.create.mockResolvedValue({ id: 'p-1', role: 'host' });
+
+      await service.createRoom('host-1', {
+        name: 'Standup',
+        webinarMode: true,
+      });
+
+      expect(prisma.room.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ webinarMode: true }),
       });
     });
 
@@ -586,6 +620,26 @@ describe('RoomsService', () => {
       expect(prisma.participant.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           create: { roomId: 'room-1', userId: 'user-3', role: 'participant' },
+        }),
+      );
+    });
+
+    it('assigns the viewer role (not participant) on join in a webinar-mode room', async () => {
+      prisma.room.findUnique.mockResolvedValue(
+        makeRoom({ status: 'active', maxParticipants: 10, webinarMode: true }),
+      );
+      prisma.participant.count.mockResolvedValue(0);
+      prisma.participant.findUnique.mockResolvedValue(null);
+      prisma.participant.upsert.mockResolvedValue({
+        id: 'p-3',
+        role: 'viewer',
+      });
+
+      await service.joinRoom('room-1', 'user-3');
+
+      expect(prisma.participant.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: { roomId: 'room-1', userId: 'user-3', role: 'viewer' },
         }),
       );
     });
@@ -1114,9 +1168,10 @@ describe('RoomsService', () => {
       expect(prisma.participant.update).not.toHaveBeenCalled();
     });
 
-    it('sets an active participant’s role to cohost', async () => {
+    it('sets an active participant’s role to cohost and syncs live LiveKit permissions', async () => {
       prisma.participant.findUnique.mockResolvedValue({
         id: 'p-2',
+        userId: 'user-2',
         leftAt: null,
       });
 
@@ -1126,11 +1181,22 @@ describe('RoomsService', () => {
         where: { id: 'p-2' },
         data: { role: 'cohost' },
       });
+      // The one transition that genuinely needs a live permission update
+      // (see LiveKitService.updateParticipantPermissions) is a webinar
+      // viewer being promoted — this same call happens for a plain
+      // participant too (harmless no-op there, canPublish doesn't
+      // change), so it's always made rather than conditionally.
+      expect(liveKit.updateParticipantPermissions).toHaveBeenCalledWith(
+        'room-1',
+        'user-2',
+        'cohost',
+      );
     });
 
     it('promoting an already-cohost participant is a harmless no-op, not an error', async () => {
       prisma.participant.findUnique.mockResolvedValue({
         id: 'p-2',
+        userId: 'user-2',
         role: 'cohost',
         leftAt: null,
       });
@@ -1151,9 +1217,13 @@ describe('RoomsService', () => {
       expect(prisma.participant.update).not.toHaveBeenCalled();
     });
 
-    it('sets a co-host’s role back to participant', async () => {
+    it('sets a co-host’s role back to participant in an ordinary (non-webinar) room, and syncs live permissions', async () => {
+      prisma.room.findUnique.mockResolvedValue(
+        makeRoom({ webinarMode: false }),
+      );
       prisma.participant.findUnique.mockResolvedValue({
         id: 'p-2',
+        userId: 'user-2',
         role: 'cohost',
         leftAt: null,
       });
@@ -1164,11 +1234,49 @@ describe('RoomsService', () => {
         where: { id: 'p-2' },
         data: { role: 'participant' },
       });
+      expect(liveKit.updateParticipantPermissions).toHaveBeenCalledWith(
+        'room-1',
+        'user-2',
+        'participant',
+      );
+    });
+
+    // The regression test for the bug this feature would otherwise
+    // expose: demoteCoHost used to hardcode 'participant' regardless of
+    // context, which would leave a demoted webinar presenter with
+    // publish rights (canPublish: true for 'participant') even after
+    // losing them at the LiveKit layer via a stale demote. A demoted
+    // presenter in a webinar room must fall back to 'viewer', not
+    // 'participant'.
+    it('sets a co-host’s role back to viewer (not participant) in a webinar-mode room', async () => {
+      prisma.room.findUnique.mockResolvedValue(makeRoom({ webinarMode: true }));
+      prisma.participant.findUnique.mockResolvedValue({
+        id: 'p-2',
+        userId: 'user-2',
+        role: 'cohost',
+        leftAt: null,
+      });
+
+      await service.demoteCoHost('room-1', 'host-1', 'user-2');
+
+      expect(prisma.participant.update).toHaveBeenCalledWith({
+        where: { id: 'p-2' },
+        data: { role: 'viewer' },
+      });
+      expect(liveKit.updateParticipantPermissions).toHaveBeenCalledWith(
+        'room-1',
+        'user-2',
+        'viewer',
+      );
     });
 
     it('demoting a participant who was never a cohost is a harmless no-op', async () => {
+      prisma.room.findUnique.mockResolvedValue(
+        makeRoom({ webinarMode: false }),
+      );
       prisma.participant.findUnique.mockResolvedValue({
         id: 'p-2',
+        userId: 'user-2',
         role: 'participant',
         leftAt: null,
       });
