@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   AccessToken,
+  ParticipantPermission,
   RoomServiceClient,
   ServerError,
   TrackType,
@@ -43,11 +44,26 @@ export class LiveKitService {
 
   constructor(private readonly config: ConfigService) {}
 
+  // A viewer (see Room.webinarMode in schema.prisma) is the only role
+  // that ever differs on the one grant that actually matters for media:
+  // whether this identity can publish its own audio/video/screen-share
+  // tracks at all. Shared by createAccessToken below (the token minted
+  // at join time) AND updateParticipantPermissions (a LIVE permission
+  // update for an already-connected participant, used when a webinar
+  // viewer is promoted/demoted mid-call) so the two can't drift apart.
+  private canPublishForRole(role: RoomRole): boolean {
+    return role !== 'viewer';
+  }
+
   // Grants mirror the role/grant scheme decided in WEBRTC_LIVEKIT.md #2:
-  // host can admin the room (mute/remove others, trigger recording),
-  // participant can publish/subscribe their own media, viewer is
-  // subscribe-only. Never derived from client input — always looked up
-  // server-side from the Participant row for this exact user+room.
+  // host/cohost/participant can publish+subscribe their own media, a
+  // viewer is subscribe-only for MEDIA specifically — chat, reactions,
+  // raise-hand, and poll votes all go over canPublishData/
+  // canUpdateOwnMetadata instead, which stay true for everyone
+  // (including a viewer) so a webinar's view-only attendees can still be
+  // an interactive audience, not a fully silent one. Never derived from
+  // client input — always looked up server-side from the Participant row
+  // for this exact user+room.
   async createAccessToken(params: {
     identity: string;
     name: string;
@@ -66,9 +82,9 @@ export class LiveKitService {
     const grant: VideoGrant = {
       room: params.roomId,
       roomJoin: true,
-      canPublish: params.role !== 'viewer',
+      canPublish: this.canPublishForRole(params.role),
       canSubscribe: true,
-      canPublishData: params.role !== 'viewer',
+      canPublishData: true,
       // A co-host performs genuinely admin-shaped actions (mute, remove,
       // admit, deny, lock, lower-hand — see RoomHostOrCoHostGuard), so
       // they get roomAdmin too. roomRecord stays host-only: recording
@@ -87,9 +103,9 @@ export class LiveKitService {
       // enforces the "own" part of this grant server-side: it only ever
       // allows a participant to update THEIR OWN metadata, never another
       // participant's, so this can't be used to forge someone else's
-      // state. Off by default in LiveKit, same viewer carve-out as
-      // canPublish/canPublishData above.
-      canUpdateOwnMetadata: params.role !== 'viewer',
+      // state. True for everyone, including a viewer — raising a hand
+      // doesn't require publish rights.
+      canUpdateOwnMetadata: true,
     };
     token.addGrant(grant);
 
@@ -174,6 +190,43 @@ export class LiveKitService {
       return true;
     } catch (error) {
       if (isParticipantNotConnected(error)) return false;
+      throw error;
+    }
+  }
+
+  // Updates an ALREADY-CONNECTED participant's live enforced permissions
+  // — not just metadata. Used by RoomsService.promoteToCoHost/
+  // demoteCoHost specifically for a webinar's viewer<->cohost
+  // transition, where canPublish genuinely flips (unlike a plain
+  // participant<->cohost promotion, where canPublish never changes and
+  // this call would be a no-op — still safe to make regardless, just
+  // pointless there). Confirmed via the SDK's own shipped types
+  // (RoomServiceClient.updateParticipant's `permission` parameter,
+  // ParticipantPermission's canSubscribe/canPublish/canPublishData
+  // fields) that this genuinely updates what LiveKit enforces for a live
+  // connection, not just a value the client can read — the promoted
+  // participant does not need to reconnect.
+  async updateParticipantPermissions(
+    roomId: string,
+    identity: string,
+    role: RoomRole,
+  ): Promise<void> {
+    const permission: Partial<ParticipantPermission> = {
+      canSubscribe: true,
+      canPublish: this.canPublishForRole(role),
+      canPublishData: true,
+    };
+    try {
+      await this.getRoomService().updateParticipant(
+        roomId,
+        identity,
+        undefined,
+        permission,
+      );
+    } catch (error) {
+      if (isParticipantNotConnected(error)) {
+        throw new LiveKitParticipantNotConnectedError(roomId, identity);
+      }
       throw error;
     }
   }

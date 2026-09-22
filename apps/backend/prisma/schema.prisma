@@ -118,6 +118,17 @@ model Room {
   // with broken, undecryptable media. See FEATURES.md's Research notes.
   e2eeEnabled Boolean @default(false)
 
+  // Chosen once at creation, same as e2eeEnabled — no live mid-call
+  // toggle, since reclassifying already-connected participants' publish
+  // rights mid-call has no safe moment that couldn't race with a join.
+  // When true, RoomsService.joinRoom assigns new (non-host) joiners
+  // RoomRole.viewer instead of 'participant' — view-only, but still able
+  // to chat/react/raise-hand/vote (see LiveKitService.createAccessToken's
+  // grant). A host promotes any attendee to present via the existing
+  // co-host mechanism (RoomsService.promoteToCoHost), reused as-is
+  // rather than a new narrower role — see FEATURES.md's Research notes.
+  webinarMode Boolean @default(false)
+
   hostId String
   host   User   @relation("RoomHost", fields: [hostId], references: [id])
 

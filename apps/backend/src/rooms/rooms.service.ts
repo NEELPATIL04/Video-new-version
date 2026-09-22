@@ -100,6 +100,7 @@ export class RoomsService {
           hostId,
           joinCode,
           e2eeEnabled: dto.e2eeEnabled ?? false,
+          webinarMode: dto.webinarMode ?? false,
         },
       });
 
@@ -297,9 +298,11 @@ export class RoomsService {
     }
 
     // Roles are NEVER accepted from the client — upsert always assigns
-    // "participant" for a new join. The one and only "host" row is created
-    // in createRoom and is never reassigned here, preventing any joining
-    // user from escalating themselves to host.
+    // "participant" (or, in a webinar-mode room, "viewer" — still able to
+    // chat/react/raise-hand/vote, just not publish audio/video/screen; see
+    // Room.webinarMode in schema.prisma) for a new join. The one and only
+    // "host" row is created in createRoom and is never reassigned here,
+    // preventing any joining user from escalating themselves to host.
     //
     // admittedAt is deliberately untouched on the update branch: a
     // returning participant (page refresh, flaky connection) keeps
@@ -310,7 +313,11 @@ export class RoomsService {
     const participant = await this.prisma.participant.upsert({
       where: { roomId_userId: { roomId, userId } },
       update: { leftAt: null, joinedAt: new Date() },
-      create: { roomId, userId, role: 'participant' },
+      create: {
+        roomId,
+        userId,
+        role: room.webinarMode ? 'viewer' : 'participant',
+      },
       include: { user: { select: { name: true } } },
     });
 
@@ -797,15 +804,18 @@ export class RoomsService {
   // co-host is a harmless no-op rather than an error — idempotent is
   // simpler than adding a "already a co-host" error path nobody needs.
   //
-  // Only Participant.role changes — no LiveKit token is reissued here,
-  // and that's fine: mute/remove/admit/deny/lock/lower-hand are all
-  // backend-mediated RoomServiceClient calls (the backend's own API
-  // key/secret, not the caller's personal LiveKit token), gated by
-  // RoomHostOrCoHostGuard's DB-level check — so a promotion takes effect
-  // immediately for every action that actually matters, with no
-  // reconnect needed. The token's own roomAdmin bit only catches up on
-  // the co-host's next reconnect, but nothing in this app reads that bit
-  // client-side today (see LiveKitService.createAccessToken).
+  // Most role changes here only touch Participant.role: mute/remove/
+  // admit/deny/lock/lower-hand are all backend-mediated RoomServiceClient
+  // calls (the backend's own API key/secret, not the caller's personal
+  // LiveKit token), gated by RoomHostOrCoHostGuard's DB-level check — so
+  // a promotion takes effect immediately for every action that actually
+  // matters, with no reconnect needed. The one exception is a webinar's
+  // viewer→cohost transition, where canPublish genuinely flips
+  // false→true — LiveKit only enforces that from the token's grant at
+  // connect time unless the LIVE connection's permissions are explicitly
+  // updated too, hence the updateParticipantPermissions call below (a
+  // no-op in every other case, since canPublish doesn't change for a
+  // plain participant→cohost promotion).
   async promoteToCoHost(
     roomId: string,
     hostId: string,
@@ -820,26 +830,43 @@ export class RoomsService {
       where: { id: participant.id },
       data: { role: 'cohost' },
     });
+    await this.runLiveKitAction(() =>
+      this.liveKit.updateParticipantPermissions(
+        roomId,
+        participant.userId,
+        'cohost',
+      ),
+    );
   }
 
   // Demoting someone who isn't currently a co-host is likewise a harmless
-  // no-op — always resolves to 'participant' regardless of their prior
-  // role (viewer demotion isn't a real scenario since joinRoom never
-  // assigns 'viewer' today, but this stays correct either way).
+  // no-op. Resolves to 'viewer' in a webinar-mode room (where that's the
+  // baseline non-presenter role) or 'participant' otherwise — NOT always
+  // 'participant' regardless of prior role, since a demoted webinar
+  // presenter must actually lose publish rights again, not silently keep
+  // them. See updateParticipantPermissions below for why the LiveKit
+  // side needs the same explicit sync promoteToCoHost does.
   async demoteCoHost(
     roomId: string,
     hostId: string,
     targetUserId: string,
   ): Promise<void> {
-    const participant = await this.assertActiveNonSelfParticipant(
-      roomId,
-      hostId,
-      targetUserId,
-    );
+    const [room, participant] = await Promise.all([
+      this.getRoomById(roomId),
+      this.assertActiveNonSelfParticipant(roomId, hostId, targetUserId),
+    ]);
+    const role = room.webinarMode ? 'viewer' : 'participant';
     await this.prisma.participant.update({
       where: { id: participant.id },
-      data: { role: 'participant' },
+      data: { role },
     });
+    await this.runLiveKitAction(() =>
+      this.liveKit.updateParticipantPermissions(
+        roomId,
+        participant.userId,
+        role,
+      ),
+    );
   }
 
   // Late-joiner path: fetched via REST on mount by WhiteboardControl,

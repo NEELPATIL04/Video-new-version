@@ -18,11 +18,13 @@ import { Hand } from "lucide-react";
 import { isHandRaised, RaiseHandControl } from "./RaiseHandControl";
 import { ReactionsControl } from "./ReactionsControl";
 import { CallSidePanel } from "./CallSidePanel";
+import type { Participant } from "../api";
 
 interface VideoStageProps {
   roomId: string;
   canManage: boolean;
   isHost: boolean;
+  role: Participant["role"];
 }
 
 // Composes the same building blocks <VideoConference /> uses internally
@@ -56,7 +58,14 @@ interface VideoStageProps {
 // More menu + drawer; ReactionsControl owns its own toggle + popover;
 // both are rendered here as tray items, not independently floating
 // panels.
-export function VideoStage({ roomId, canManage, isHost }: VideoStageProps) {
+export function VideoStage({ roomId, canManage, isHost, role }: VideoStageProps) {
+  // A webinar-mode viewer (see Room.webinarMode in schema.prisma) is
+  // view-only — no camera/mic/screen-share of their own — but still an
+  // interactive attendee: chat/reactions/raise-hand stay rendered
+  // unconditionally below regardless of this flag (only their publish
+  // rights are gated, both here in the UI and, more importantly, at the
+  // LiveKit grant level — see LiveKitService.createAccessToken).
+  const isViewer = role === "viewer";
   const tracks = useTracks(
     [
       { source: Track.Source.Camera, withPlaceholder: true },
@@ -113,7 +122,15 @@ export function VideoStage({ roomId, canManage, isHost }: VideoStageProps) {
                   the .video-stage-tray CSS below visually hides them with
                   font-size: 0 without removing them from the accessibility
                   tree, unlike display:none/visibility:hidden. */}
-              <ControlBar variation="verbose" controls={{ chat: true }} />
+              <ControlBar
+                variation="verbose"
+                controls={{
+                  chat: true,
+                  microphone: !isViewer,
+                  camera: !isViewer,
+                  screenShare: !isViewer,
+                }}
+              />
               <ReactionsControl />
               <div className="tray-item-with-popover">
                 {/* Reads/writes the exact same localParticipant.metadata

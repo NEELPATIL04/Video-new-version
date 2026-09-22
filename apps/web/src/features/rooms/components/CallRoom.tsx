@@ -214,7 +214,7 @@ export function CallRoom({
           Lock all live behind the one "More" menu instead of 8
           simultaneously-visible rail icons. See VideoStage.tsx and
           CallSidePanel.tsx for the full reasoning. */}
-      <VideoStage roomId={roomId} canManage={canManage} isHost={isHost} />
+      <VideoStage roomId={roomId} canManage={canManage} isHost={isHost} role={role} />
     </LiveKitRoom>
   );
 }
